@@ -1,4 +1,6 @@
-# cocotbext-ospi
+# OSPI Interface for Cocotb
+##### The Octal Serial Peripheral Interface (OSPI) extends QSPI by using eight data lines, doubling the data transfer rate and catering to applications demanding high-speed data processing. Cocotb, a flexible Python-based hardware verification framework, enables the simulation and testing of OSPI interfaces. By incorporating OSPI into Cocotb testbenches, developers can thoroughly validate the performance and correctness of high-speed hardware designs.
+##### This documentation delves into the implementation and verification of OSPI interfaces using Cocotb, detailing the key components such as OSPI configuration, master and slave modules, and providing comprehensive testbench examples. These resources will assist developers in accurately simulating and validating the performance of OSPI-enabled hardware designs, ensuring they meet the stringent requirements of high-speed applications.
 
 ## Documentation
 To properly handle OSPI (Octal SPI), which involves eight data lines (IO0-IO7), we need to update the module to include these lines and adjust the communication logic accordingly. Below is the revised Verilog module and testbench documentation to support OSPI with eight data lines.
@@ -432,3 +434,6 @@ The reset_n signal is deasserted after 10 time units to simulate a reset release
 
 A clock signal clk is generated with a period of 10 time units.
 The ospi_sclk signal (OSPI serial clock) is generated with a period of 20 time units.
+
+### Conclusion
+This documentation provides a comprehensive guide to implementing and simulating a OSPI flash memory interface using Verilog and Cocotb. The OSPI interface supports essential memory operations such as read, write, and erase, and the provided testbench ensures these functionalities are correctly verified. Adjust and expand the simulation code as necessary to meet your specific requirements.
