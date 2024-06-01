@@ -32,7 +32,7 @@ from .ospi_config import OspiConfig
 __all__ = ["OspiBus", "OspiMaster",  "OspiSlave" "OspiConfig"]
 ```
 ##### QspiBus 
-This class will handle the initialization of the OSPI signals.
+This class will handle the initialization of the OSPI signals. The OspiBus class models the signals of an OSPI bus. This includes the chip select, serial clock, and data lines. In an OSPI interface, the data lines are typically io0 to io7 for octal communication.
 
 qspi_bus.py
 ```python
@@ -68,6 +68,8 @@ class OspiBus:
         return cls(sclk, cs, io0, io1, io2, io3, io4, io5, io6, io7)
 
 ```
+#### OspiMaster
+The OspiMaster class models the behavior of an Octal SPI (OSPI) master device. This class typically handles the initiation and control of OSPI transactions, including sending commands, writing data, and reading data from a connected OSPI slave device. 
 ospi_master.py
 ```python
 import cocotb
@@ -136,6 +138,8 @@ class OspiMaster:
             byte = (byte << 4) | nibble  # Combine the nibble into the byte
         return byte
 ```
+#### OspiSlave
+The OspiSlave class models the behavior of an OSPI slave device. This class can include methods for responding to OSPI commands, such as reading and writing data. The exact implementation will depend on the specific behavior and protocols supported by the OSPI slave device.
 ospi_slave.py
 ```python
 class OspiSlave:
@@ -156,6 +160,8 @@ class OspiSlave:
             await RisingEdge(self.dut.OSPI_CLK)
         await Timer(1, units='ns')
 ```
+##### OspiConfig
+The OspiConfig class encapsulates the configuration parameters for the OSPI interface. This typically includes the word width, serial clock frequency, clock polarity, clock phase, and chip select polarity. Additionally, it can include flags for enabling special modes like quad mode or octal mode.
 ospi_config.py
 ```python
 class OspiConfig:
@@ -250,3 +256,179 @@ module ospi_flash (
 endmodule
 
 ```
+### OspiFlash
+The OspiFlash class models the behavior of an Octal SPI (OSPI) flash memory device. This class typically includes methods for initializing the flash memory, reading data from it, writing data to it, and performing other operations like erasing memory blocks. The class interacts with an OSPI master to send and receive data and commands according to the OSPI protocol.
+```python
+import cocotb
+from cocotb.triggers import Timer, RisingEdge
+from cocotb.clock import Clock
+from cocotbext.ospi import OspiBus, OspiConfig, OspiMaster
+
+class OspiFlash:
+    def __init__(self, dut):
+        self.dut = dut
+        self.ospi_bus = OspiBus.from_prefix(dut, "OSPI")
+        self.ospi_config = OspiConfig(
+            word_width=8,
+            sclk_freq=50e6,
+            cpol=False,
+            cpha=False,
+            cs_active_low=True,
+            quad_mode=True  # Assuming quad_mode is a valid config for OSPI
+        )
+        self.ospi_master = OspiMaster(self.ospi_bus, self.ospi_config)
+
+    async def reset(self):
+        self.dut.OSPI_RST_b.value = 0
+        await Timer(100, units='ns')
+        self.dut.OSPI_RST_b.value = 1
+        await Timer(100, units='ns')
+
+    async def initialize(self):
+        cocotb.start_soon(Clock(self.dut.clk, 10, units='ns').start())
+        await self.reset()
+
+    async def write(self, address, data):
+        command = [0x02]  # Page Program command for OSPI
+        address_bytes = [(address >> i) & 0xFF for i in (16, 8, 0)]
+        data_bytes = [data]
+        await self.ospi_master.write(command + address_bytes + data_bytes)
+        await Timer(1, units='ns')
+
+    async def read(self, address):
+        command = [0x03]  # Read Data command for OSPI
+        address_bytes = [(address >> i) & 0xFF for i in (16, 8, 0)]
+        await self.ospi_master.write(command + address_bytes)
+        await Timer(1, units='ns')
+        read_data = await self.ospi_master.read(1)
+        return read_data[0]
+
+    async def erase(self, address):
+        command = [0x20]  # Sector Erase command for OSPI
+        address_bytes = [(address >> i) & 0xFF for i in (16, 8, 0)]
+        await self.ospi_master.write(command + address_bytes)
+        await Timer(1, units='ns')
+```
+#### Explanation
+#### Initialization:
+
+The OspiFlash class initializes with the DUT (device under test) and sets up the OSPI bus and configuration using cocotbext.ospi.
+#### Reset:
+
+The reset method toggles the reset signal to reset the OSPI flash memory.
+#### Initialize:
+
+The initialize method starts a clock and calls the reset method to prepare the OSPI flash memory for operations.
+#### Write Operation:
+
+The write method sends a Page Program command (0x02), followed by the address and data bytes, to the OSPI flash memory.
+#### Read Operation:
+
+The read method sends a Read Data command (0x03), followed by the address bytes, and then reads the data from the OSPI flash memory.
+#### Erase Operation:
+
+The erase method sends a Sector Erase command (0x20), followed by the address bytes, to erase a sector of the OSPI flash memory.
+
+### Test Case: Write and Read
+```python
+@cocotb.test()
+async def test_ospi_flash_write_read(dut):
+    flash = OSPIFlash(dut)
+    await flash.initialize()
+    
+    address = 0x00
+    data_to_write = 0xA5
+    await flash.write(address, data_to_write)
+    await Timer(10, units='ns')
+    
+    read_data = await flash.read(address)
+    assert read_data == data_to_write, f"Data mismatch: {read_data} != {data_to_write}"
+```
+### Test Case: Erase
+```python
+@cocotb.test()
+async def test_ospi_flash_erase(dut):
+    flash = OSPIFlash(dut)
+    await flash.initialize()
+    
+    address = 0x00
+    data_to_write = 0x5A
+    await flash.write(address, data_to_write)
+    await Timer(10, units='ns')
+    
+    await flash.erase(address)
+    await Timer(10, units='ns')
+    
+    read_data = await flash.read(address)
+    assert read_data == 0xFF, f"Data after erase mismatch: {read_data} != 0xFF"
+```
+
+### OSPI Flash Test Module
+This test module sets up the testbench environment to simulate the OSPI flash memory interface. 
+```verilog
+module ospi_flash_test;
+    reg ospi_sclk;             // OSPI serial clock
+    reg [7:0] ospi_io;         // OSPI data lines
+    reg ospi_cs;               // OSPI chip select
+    reg reset_n;               // Active-low reset signal
+    reg clk;                   // Clock signal
+    reg write_enable;          // Write enable signal
+    reg read_enable;           // Read enable signal
+    reg erase_enable;          // Erase enable signal
+    reg [7:0] data_in;         // Data input for memory operations
+    reg [7:0] address;         // Address input for memory operations
+    wire [7:0] data_out;       // Data output from memory operations
+
+    ospi_flash dut (
+        .ospi_sclk(ospi_sclk),
+        .ospi_cs(ospi_cs),
+        .ospi_io(ospi_io),
+        .reset_n(reset_n),
+        .clk(clk),
+        .write_enable(write_enable),
+        .read_enable(read_enable),
+        .erase_enable(erase_enable),
+        .data_in(data_in),
+        .address(address),
+        .data_out(data_out)
+    );
+
+    initial begin
+        $dumpfile("waves.vcd");
+        $dumpvars(0, ospi_flash_test);
+        
+        ospi_sclk = 0;
+        ospi_io = 8'b00000000;
+        ospi_cs = 1;
+        reset_n = 0;
+        clk = 0;
+        write_enable = 0;
+        read_enable = 0;
+        erase_enable = 0;
+        data_in = 0;
+        address = 0;
+        
+        #10 reset_n = 1;
+    end
+    always #5 clk = ~clk;
+
+    // Generate OSPI clock
+    always #10 ospi_sclk = ~ospi_sclk;
+endmodule
+```
+#### Explanation
+#### Module Definition:
+
+The module is named ospi_flash_test.
+It includes all necessary signals for the OSPI interface: ospi_sclk, ospi_io (8-bit bus for the data lines), ospi_cs, reset_n, clk, write_enable, read_enable, erase_enable, data_in, address, and data_out.
+#### Instantiating the DUT:
+
+The ospi_flash module (device under test) is instantiated with the relevant ports connected to the testbench signals.
+#### Initial Block:
+
+Initializes the signals and sets up the dump file for waveform viewing.
+The reset_n signal is deasserted after 10 time units to simulate a reset release.
+#### Clock Generation:
+
+A clock signal clk is generated with a period of 10 time units.
+The ospi_sclk signal (OSPI serial clock) is generated with a period of 20 time units.
