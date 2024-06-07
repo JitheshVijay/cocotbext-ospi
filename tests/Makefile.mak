@@ -15,7 +15,7 @@ TOPLEVEL = $(DUT)
 MODULE   = test_ospi_flash
 
 # Verilog source files
-VERILOG_SOURCES = $(shell pwd)/verilog/ospi_flash.v $(shell pwd)/verilog/ospi_flash_test.v
+VERILOG_SOURCES = $(shell pwd)/../verilog/ospi_flash.v $(shell pwd)/../verilog/ospi_flash_test.v
 
 # Enable waveform dumping
 ifeq ($(SIM), icarus)
@@ -47,4 +47,3 @@ clean::
 	@rm -rf sim_build
 
 .PHONY: all sim clean
-
