@@ -2,7 +2,7 @@ import sys
 import os
 
 # Add the path to the cocotbext directory
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'D:\Manipal\cocotb\cocotbext')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '\cocotbext-ospi\cocotbext')))
 
 from cocotbext.ospi import OspiBus, OspiMaster, OspiSlave, OspiConfig
 
