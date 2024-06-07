@@ -46,3 +46,4 @@ module ospi_flash (
     assign OSPI_IO[7] = (write_enable || erase_enable) ? data_in[7] : 1'bz;
 
 endmodule
+
