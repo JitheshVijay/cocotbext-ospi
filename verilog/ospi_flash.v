@@ -1,10 +1,7 @@
 module ospi_flash (
     input wire OSPI_CLK,        // OSPI serial clock input
     inout wire [7:0] OSPI_IO,   // OSPI data lines (0 to 7)
-    input wire OSPI_DS,         // Read data strobe input
-    input wire OSPI_CS0_b,      // Chip select 0 (active low)
-    input wire OSPI_CS1_b,      // Chip select 1 (active low)
-    input wire OSPI_RST_b,      // Reset signal (active low)
+    input wire OSPI_CS,         // Chip select (active low)
     input wire clk,             // Clock input for internal logic
     input wire reset_n,         // Active-low reset input
     input wire write_enable,    // Write enable signal
@@ -23,27 +20,28 @@ module ospi_flash (
         if (!reset_n) begin
             data_out <= 8'hFF;  // Initialize data_out to 0xFF on reset
         end else begin
-            if (write_enable) begin
+            if (write_enable && !OSPI_CS) begin
                 memory[address] <= data_in;    // Write data_in to memory at specified address
             end
-            if (read_enable) begin
+            if (read_enable && !OSPI_CS) begin
                 data_out <= memory[address];   // Read data from memory at specified address
             end
-            if (erase_enable) begin
+            if (erase_enable && !OSPI_CS) begin
                 memory[address] <= 8'hFF;      // Erase data by writing 0xFF to memory at specified address
             end
         end
     end
 
     // Assign OSPI data lines based on operation mode
-    assign OSPI_IO[0] = (write_enable || erase_enable) ? data_in[0] : 1'bz;
-    assign OSPI_IO[1] = (write_enable || erase_enable) ? data_in[1] : 1'bz;
-    assign OSPI_IO[2] = (write_enable || erase_enable) ? data_in[2] : 1'bz;
-    assign OSPI_IO[3] = (write_enable || erase_enable) ? data_in[3] : 1'bz;
-    assign OSPI_IO[4] = (write_enable || erase_enable) ? data_in[4] : 1'bz;
-    assign OSPI_IO[5] = (write_enable || erase_enable) ? data_in[5] : 1'bz;
-    assign OSPI_IO[6] = (write_enable || erase_enable) ? data_in[6] : 1'bz;
-    assign OSPI_IO[7] = (write_enable || erase_enable) ? data_in[7] : 1'bz;
+    assign OSPI_IO[0] = (write_enable && !OSPI_CS) ? data_in[0] : 1'bz;
+    assign OSPI_IO[1] = (write_enable && !OSPI_CS) ? data_in[1] : 1'bz;
+    assign OSPI_IO[2] = (write_enable && !OSPI_CS) ? data_in[2] : 1'bz;
+    assign OSPI_IO[3] = (write_enable && !OSPI_CS) ? data_in[3] : 1'bz;
+    assign OSPI_IO[4] = (write_enable && !OSPI_CS) ? data_in[4] : 1'bz;
+    assign OSPI_IO[5] = (write_enable && !OSPI_CS) ? data_in[5] : 1'bz;
+    assign OSPI_IO[6] = (write_enable && !OSPI_CS) ? data_in[6] : 1'bz;
+    assign OSPI_IO[7] = (write_enable && !OSPI_CS) ? data_in[7] : 1'bz;
 
 endmodule
+
 
