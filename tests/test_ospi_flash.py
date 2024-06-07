@@ -35,3 +35,4 @@ async def test_ospi_flash_erase(dut):
     print(f"Data after erase: {read_data}")
     assert read_data == 0xFF, f"Data after erase mismatch: {read_data} != 0xFF"
 
+
