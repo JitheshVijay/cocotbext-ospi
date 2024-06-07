@@ -1,0 +1,58 @@
+# Makefile for OSPI Cocotb project
+
+# Verilog sources
+VERILOG_SOURCES = ospi_flash.v ospi_flash_test.v
+
+# Simulation tool
+SIM ?= icarus
+
+# Top-level module for simulation
+TOPLEVEL_LANG ?= verilog
+TOPLEVEL = ospi_flash_test
+
+# Cocotb test modules
+MODULE = ospi_flash
+
+# Cocotb parameters
+export PYTHONPATH := $(PYTHONPATH):cocotbext
+WAVES ?= 1
+
+# Simulation tool options
+ifeq ($(SIM), icarus)
+    SIM_CMD = vvp -n $(SIM_BUILD)/sim.vvp
+    WAVE_OPTION = -gWAVES=$(WAVES)
+else ifeq ($(SIM), modelsim)
+    SIM_CMD = vsim -c -do "run -all; quit" -wlf $(SIM_BUILD)/waves.wlf
+    WAVE_OPTION = +define+WAVES=$(WAVES)
+endif
+
+# Directory for simulation build
+SIM_BUILD = sim_build
+
+# Default target
+default: sim
+
+# Compile the Verilog code and run the simulation
+sim:
+    @echo "Compiling Verilog sources and running simulation..."
+    @mkdir -p $(SIM_BUILD)
+    @$(MAKE) $(SIM_BUILD)/sim.vvp
+
+$(SIM_BUILD)/sim.vvp: $(VERILOG_SOURCES)
+    @echo "Compiling Verilog sources with Icarus Verilog..."
+    iverilog -o $(SIM_BUILD)/sim.vvp $(VERILOG_SOURCES) $(WAVE_OPTION) -s $(TOPLEVEL)
+    @echo "Running simulation..."
+    $(SIM_CMD)
+
+# Clean up generated files
+clean:
+    @echo "Cleaning up simulation files..."
+    rm -rf $(SIM_BUILD)
+    rm -f *.vcd
+
+# Run the simulation with Cocotb
+test:
+    @echo "Running Cocotb tests..."
+    MODULE=$(MODULE) SIM=$(SIM) make sim
+
+.PHONY: default sim clean test
