@@ -1,10 +1,7 @@
 module ospi_flash_test;
   reg OSPI_CLK;       // OSPI serial clock
   wire [7:0] OSPI_IO;   // OSPI data lines (inout needs to be wire)
-  reg OSPI_DS;        // OSPI data strobe
-  reg OSPI_CS0_b;      // OSPI chip select 0
-  reg OSPI_CS1_b;      // OSPI chip select 1
-  reg OSPI_RST_b;      // OSPI reset
+  reg OSPI_CS;        // OSPI chip select (active low)
   reg reset_n;        // Active-low reset signal
   reg clk;            // Clock signal
   reg write_enable;   // Write enable signal
@@ -20,10 +17,7 @@ module ospi_flash_test;
   ospi_flash dut (
     .OSPI_CLK(OSPI_CLK),
     .OSPI_IO(OSPI_IO),
-    .OSPI_DS(OSPI_DS),
-    .OSPI_CS0_b(OSPI_CS0_b),
-    .OSPI_CS1_b(OSPI_CS1_b),
-    .OSPI_RST_b(OSPI_RST_b),
+    .OSPI_CS(OSPI_CS),
     .clk(clk),
     .reset_n(reset_n),
     .write_enable(write_enable),
@@ -37,10 +31,7 @@ module ospi_flash_test;
   initial begin
     // Initial values
     OSPI_CLK = 0;
-    OSPI_DS = 0;
-    OSPI_CS0_b = 1;
-    OSPI_CS1_b = 1;
-    OSPI_RST_b = 0;
+    OSPI_CS = 1;
     clk = 0;
     reset_n = 0;
     write_enable = 0;
@@ -51,17 +42,20 @@ module ospi_flash_test;
 
     // Reset sequence
     #10 reset_n = 1;
-    OSPI_RST_b = 1;
 
     // Test sequence example
-    #20 write_enable = 1;
+    #20 OSPI_CS = 0;
+    write_enable = 1;
     data_in = 8'hA5;
     address = 8'h01;
     #10 write_enable = 0;
+    OSPI_CS = 1;
 
-    #20 read_enable = 1;
+    #20 OSPI_CS = 0;
+    read_enable = 1;
     address = 8'h01;
     #10 read_enable = 0;
+    OSPI_CS = 1;
 
     // Wait some time and finish
     #100 $finish;
@@ -79,3 +73,4 @@ module ospi_flash_test;
   end
 
 endmodule
+
