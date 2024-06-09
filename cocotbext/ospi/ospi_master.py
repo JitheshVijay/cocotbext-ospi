@@ -36,7 +36,7 @@ class OspiMaster:
             self.bus.io2.value = (nibble >> 2) & 1  # Set the value for io2
             self.bus.io3.value = (nibble >> 3) & 1  # Set the value for io3
             if self.config.quad_mode:
-                # Additional lines for quad mode
+                # Additional lines for octal mode
                 self.bus.io4.value = (nibble >> 4) & 1  # Set the value for io4
                 self.bus.io5.value = (nibble >> 5) & 1  # Set the value for io5
                 self.bus.io6.value = (nibble >> 6) & 1  # Set the value for io6
@@ -55,8 +55,8 @@ class OspiMaster:
                 (int(self.bus.io1.value) << 1) |
                 int(self.bus.io0.value)
             )
-            if self.config.quad_mode:
-                # Additional lines for quad mode
+            if self.config.octal_mode:
+                # Additional lines for octal mode
                 nibble |= (
                     (int(self.bus.io4.value) << 4) |
                     (int(self.bus.io5.value) << 5) |
