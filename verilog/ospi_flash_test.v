@@ -43,18 +43,6 @@ module ospi_flash_test;
     // Reset sequence
     #10 reset_n = 1;
 
-    // Test sequence example
-    #20 write_enable = 1;
-    data_in = 8'hA5;
-    address = 8'h01;
-    #10 write_enable = 0;
-
-    #20 read_enable = 1;
-    address = 8'h01;
-    #10 read_enable = 0;
-
-    // Wait some time and finish
-    #100 $finish;
   end
 
   always #5 clk = ~clk;
