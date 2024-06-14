@@ -32,11 +32,13 @@ jobs:
         python-version: '3.x'
 
     - name: Install Python dependencies
-      run: pip install cocotb
+      run: pip install cocotb pytest
 
     - name: Add cocotbext to PYTHONPATH and run tests
       env:
         PYTHONPATH: ${{ github.workspace }}
+        COCOTB_LOG_LEVEL: DEBUG
       run: make -C tests
+
 
 
