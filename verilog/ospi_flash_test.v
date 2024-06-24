@@ -53,6 +53,4 @@ module ospi_flash_test;
 endmodule
 
 
-endmodule
-
 
