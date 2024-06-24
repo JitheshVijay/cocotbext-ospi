@@ -1,15 +1,15 @@
-module ospi_flash (
-    input wire OSPI_CLK,        // OSPI serial clock input
-    inout wire [7:0] OSPI_IO,   // OSPI data lines (0 to 7)
-    input wire OSPI_CS,         // Chip select (active low)
-    input wire clk,             // Clock input for internal logic
-    input wire reset_n,         // Active-low reset input
-    input wire write_enable,    // Write enable signal
-    input wire read_enable,     // Read enable signal
-    input wire erase_enable,    // Erase enable signal
-    input wire [7:0] data_in,   // Data input for write operation
-    input wire [7:0] address,   // Address input for memory access
-    output reg [7:0] data_out   // Data output for read operation
+module ospi_flash #(parameter WIDTH = 8) (
+    input wire OSPI_CLK,             // OSPI serial clock input
+    inout wire [WIDTH-1:0] OSPI_IO,  // OSPI data lines (0 to WIDTH-1)
+    input wire OSPI_CS,              // Chip select (active low)
+    input wire clk,                  // Clock input for internal logic
+    input wire reset_n,              // Active-low reset input
+    input wire write_enable,         // Write enable signal
+    input wire read_enable,          // Read enable signal
+    input wire erase_enable,         // Erase enable signal
+    input wire [7:0] data_in,        // Data input for write operation
+    input wire [7:0] address,        // Address input for memory access
+    output reg [7:0] data_out        // Data output for read operation
 );
 
     // Memory array to store data, 256 bytes in size
@@ -33,14 +33,12 @@ module ospi_flash (
     end
 
     // Assign OSPI data lines based on operation mode
-    assign OSPI_IO[0] = (write_enable && !OSPI_CS) ? data_in[0] : 1'bz;
-    assign OSPI_IO[1] = (write_enable && !OSPI_CS) ? data_in[1] : 1'bz;
-    assign OSPI_IO[2] = (write_enable && !OSPI_CS) ? data_in[2] : 1'bz;
-    assign OSPI_IO[3] = (write_enable && !OSPI_CS) ? data_in[3] : 1'bz;
-    assign OSPI_IO[4] = (write_enable && !OSPI_CS) ? data_in[4] : 1'bz;
-    assign OSPI_IO[5] = (write_enable && !OSPI_CS) ? data_in[5] : 1'bz;
-    assign OSPI_IO[6] = (write_enable && !OSPI_CS) ? data_in[6] : 1'bz;
-    assign OSPI_IO[7] = (write_enable && !OSPI_CS) ? data_in[7] : 1'bz;
+    genvar i;
+    generate
+        for (i = 0; i < WIDTH; i = i + 1) begin : gen_io
+            assign OSPI_IO[i] = (write_enable && !OSPI_CS) ? data_in[i] : 1'bz;
+        end
+    endgenerate
 
 endmodule
 
