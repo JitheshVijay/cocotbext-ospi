@@ -1,17 +1,18 @@
 module ospi_flash_test;
   parameter WIDTH = 8;
-  reg OSPI_CLK;          // OSPI serial clock
+  reg OSPI_CLK;              // OSPI serial clock
   wire [WIDTH-1:0] OSPI_IO;  // OSPI data lines (inout needs to be wire)
-  reg OSPI_CS;           // OSPI chip select
-  reg reset_n;           // Active-low reset signal
-  reg clk;               // Clock signal
-  reg write_enable;      // Write enable signal
-  reg read_enable;       // Read enable signal
-  reg erase_enable;      // Erase enable signal
+  reg OSPI_CS;               // OSPI chip select
+  reg reset_n;               // Active-low reset signal
+  reg clk;                   // Clock signal
+  reg write_enable;          // Write enable signal
+  reg read_enable;           // Read enable signal
+  reg erase_enable;          // Erase enable signal
   reg [WIDTH-1:0] data_in;   // Data input for write operations
   reg [WIDTH-1:0] address;   // Address for memory access
   wire [WIDTH-1:0] data_out; // Data output for read operations
 
+  // Instantiate the ospi_flash module
   ospi_flash #(.WIDTH(WIDTH)) dut (
       .OSPI_CLK(OSPI_CLK),
       .OSPI_IO(OSPI_IO),
@@ -25,6 +26,15 @@ module ospi_flash_test;
       .address(address),
       .data_out(data_out)
   );
+
+  // Generate individual OSPI_IO signals
+  genvar i;
+  generate
+    for (i = 0; i < WIDTH; i = i + 1) begin : gen_io_signals
+      wire OSPI_IO_signal;
+      assign OSPI_IO_signal = OSPI_IO[i];
+    end
+  endgenerate
 
   initial begin
       $dumpfile("ospi_flash_test.vcd");
@@ -43,7 +53,6 @@ module ospi_flash_test;
 
       // Apply reset
       #5 reset_n = 1;
-
   end
 
   // Clock generation
@@ -51,6 +60,5 @@ module ospi_flash_test;
   always #5 OSPI_CLK = ~OSPI_CLK;
 
 endmodule
-
 
 
