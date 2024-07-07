@@ -5,7 +5,7 @@ from cocotb.triggers import RisingEdge, Timer
 class OspiFlash:
     def __init__(self, dut):
         self.dut = dut
-        self.ospi_bus = OspiBus(dut, "OSPI_CLK", "OSPI_CS", "OSPI_IO", 8)
+        self.ospi_bus = OspiBus(dut, "OSPI_CLK", "OSPI_CS", "OSPI_IO")
 
     async def initialize(self):
         self.dut.reset_n <= 0
@@ -19,6 +19,20 @@ class OspiFlash:
         return await self.ospi_bus.read(command=0x03, address=address, mode=mode)
 
     async def erase(self, address, mode=0):
-        await self.ospi_bus.write(command=0x20, address=address, data=0xFF, mode=mode)
+        await self.ospi_bus.write(command=0x20, address=address, data=[0xFF], mode=mode)
+
+    async def fast_read(self, address, mode=0):
+        return await self.ospi_bus.read(command=0x0B, address=address, mode=mode)  # Command 0x0B for fast read
+
+    async def hold_operation(self):
+        # Implement hold operation
+        self.dut.hold_n <= 0
+        await Timer(10, units='ns')
+
+    async def release_hold(self):
+        # Implement release from hold operation
+        self.dut.hold_n <= 1
+        await Timer(10, units='ns')
+
 
 
