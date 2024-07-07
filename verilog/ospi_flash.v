@@ -41,5 +41,3 @@ module ospi_flash #(parameter WIDTH = 8) (
     endgenerate
 
 endmodule
-
-
