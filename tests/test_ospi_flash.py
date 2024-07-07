@@ -4,7 +4,9 @@ from cocotbext.ospi.ospi_flash import OspiFlash
 
 @cocotb.test()
 async def test_ospi_flash_fast_read(dut):
-    ospi = OspiFlash(dut)
+    ospi = OspiFlash(dut, clk="OSPI_CLK", cs="OSPI_CS", io=["OSPI_IO0", "OSPI_IO1", "OSPI_IO2", "OSPI_IO3", 
+                                                      "OSPI_IO4", "OSPI_IO5", "OSPI_IO6", "OSPI_IO7"])
+
     await ospi.initialize()
 
     # Fast read data in single mode
@@ -30,7 +32,9 @@ async def test_ospi_flash_fast_read(dut):
 
 @cocotb.test()
 async def test_ospi_flash_io_operations(dut):
-    ospi = OspiFlash(dut)
+    ospi = OspiFlash(dut, clk="OSPI_CLK", cs="OSPI_CS", io=["OSPI_IO0", "OSPI_IO1", "OSPI_IO2", "OSPI_IO3", 
+                                                      "OSPI_IO4", "OSPI_IO5", "OSPI_IO6", "OSPI_IO7"])
+
     await ospi.initialize()
 
     # I/O operation in single mode
@@ -56,7 +60,9 @@ async def test_ospi_flash_io_operations(dut):
 
 @cocotb.test()
 async def test_ospi_flash_hold_operations(dut):
-    ospi = OspiFlash(dut)
+    ospi = OspiFlash(dut, clk="OSPI_CLK", cs="OSPI_CS", io=["OSPI_IO0", "OSPI_IO1", "OSPI_IO2", "OSPI_IO3", 
+                                                      "OSPI_IO4", "OSPI_IO5", "OSPI_IO6", "OSPI_IO7"])
+
     await ospi.initialize()
 
     # Perform hold operation
