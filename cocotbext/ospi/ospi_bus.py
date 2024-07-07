@@ -1,9 +1,8 @@
 class OspiBus:
     def __init__(self, dut, clk, cs, io):
-        self.dut = dut
         self.clk = getattr(dut, clk)
         self.cs = getattr(dut, cs)
-        self.io = [getattr(dut, f"{io}{i}") for i in range(8)]  # Updated to access signals directly
+        self.io = [getattr(dut, f"{io}{i}") for i in range(8)]  # Access individual IO signals
 
     async def write(self, command, address, data, mode=0):
         await self.send_command(command, mode)
