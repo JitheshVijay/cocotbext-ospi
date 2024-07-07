@@ -4,12 +4,10 @@ from cocotbext.ospi.ospi_flash import OspiFlash
 
 @cocotb.test()
 async def test_ospi_flash_fast_read(dut):
-  clk = dut.OSPI_CLK
-  cs = dut.OSPI_CS
-  io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
-
-  ospi = OspiFlash(dut, clk, cs, io)
-
+    clk = dut.OSPI_CLK
+    cs = dut.OSPI_CS
+    io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
+    ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
     # Fast read data in single mode
@@ -35,12 +33,10 @@ async def test_ospi_flash_fast_read(dut):
 
 @cocotb.test()
 async def test_ospi_flash_io_operations(dut):
-  clk = dut.OSPI_CLK
-  cs = dut.OSPI_CS
-  io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
-
-  ospi = OspiFlash(dut, clk, cs, io)
-
+    clk = dut.OSPI_CLK
+    cs = dut.OSPI_CS
+    io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
+    ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
     # I/O operation in single mode
@@ -66,12 +62,10 @@ async def test_ospi_flash_io_operations(dut):
 
 @cocotb.test()
 async def test_ospi_flash_hold_operations(dut):
-  clk = dut.OSPI_CLK
-  cs = dut.OSPI_CS
-  io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
-
-  ospi = OspiFlash(dut, clk, cs, io)
-
+    clk = dut.OSPI_CLK
+    cs = dut.OSPI_CS
+    io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
+    ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
     # Perform hold operation
