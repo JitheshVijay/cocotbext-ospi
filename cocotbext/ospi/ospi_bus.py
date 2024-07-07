@@ -3,7 +3,7 @@ class OspiBus:
         self.dut = dut
         self.clk = getattr(dut, clk)
         self.cs = getattr(dut, cs)
-        self.io = [getattr(dut, f"{io}[{i}]") for i in range(8)]
+        self.io = [getattr(dut, f"{io}{i}") for i in range(8)]  # Updated to access signals directly
 
     async def write(self, command, address, data, mode=0):
         await self.send_command(command, mode)
@@ -55,6 +55,4 @@ class OspiBus:
             return [0, 1, 2, 3, 4, 5, 6, 7]
         else:
             raise ValueError(f"Unsupported mode: {mode}")
-
-
 
