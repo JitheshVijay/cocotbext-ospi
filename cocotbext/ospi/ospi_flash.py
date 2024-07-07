@@ -22,17 +22,16 @@ class OspiFlash:
         await self.ospi_bus.write(command=0x20, address=address, data=[0xFF], mode=mode)
 
     async def fast_read(self, address, mode=0):
-        return await self.ospi_bus.read(command=0x0B, address=address, mode=mode)  # Command 0x0B for fast read
+        return await self.ospi_bus.read(command=0x0B, address=address, mode=mode)
 
     async def hold_operation(self):
-        # Implement hold operation
         self.dut.hold_n <= 0
         await Timer(10, units='ns')
 
     async def release_hold(self):
-        # Implement release from hold operation
         self.dut.hold_n <= 1
         await Timer(10, units='ns')
+
 
 
 
