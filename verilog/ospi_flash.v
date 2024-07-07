@@ -1,20 +1,20 @@
 module ospi_flash #(parameter WIDTH = 8) (
-    input wire OSPI_CLK,             // OSPI serial clock input
-    inout wire [WIDTH-1:0] OSPI_IO,  // OSPI data lines (0 to WIDTH-1)
-    input wire OSPI_CS,              // Chip select (active low)
-    input wire clk,                  // Clock input for internal logic
-    input wire reset_n,              // Active-low reset input
-    input wire write_enable,         // Write enable signal
-    input wire read_enable,          // Read enable signal
-    input wire erase_enable,         // Erase enable signal
-    input wire [7:0] data_in,        // Data input for write operation
-    input wire [7:0] address,        // Address input for memory access
-    output reg [7:0] data_out        // Data output for read operation
+    input wire OSPI_CLK,                 // OSPI serial clock input
+    inout wire [WIDTH-1:0] OSPI_IO,      // OSPI data lines (0 to WIDTH-1)
+    input wire OSPI_CS,                  // Chip select (active low)
+    input wire clk,                      // Clock input for internal logic
+    input wire reset_n,                  // Active-low reset input
+    input wire write_enable,             // Write enable signal
+    input wire read_enable,              // Read enable signal
+    input wire erase_enable,             // Erase enable signal
+    input wire [7:0] data_in,            // Data input for write operation
+    input wire [7:0] address,            // Address input for memory access
+    output reg [7:0] data_out            // Data output for read operation
 );
 
     // Memory array to store data, 256 bytes in size
     reg [7:0] memory [0:255];
-    reg [7:0] data_buffer;      // Buffer to handle bidirectional data lines
+    reg [7:0] data_buffer;  // Buffer to handle bidirectional data lines
 
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
