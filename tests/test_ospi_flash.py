@@ -6,7 +6,8 @@ from cocotbext.ospi.ospi_flash import OspiFlash
 async def test_ospi_flash_fast_read(dut):
     clk = dut.OSPI_CLK
     cs = dut.OSPI_CS
-    io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
+    io =  ["OSPI_IO0", "OSPI_IO1", "OSPI_IO2", "OSPI_IO3",
+"OSPI_IO4", "OSPI_IO5", "OSPI_IO6", "OSPI_IO7"]
     ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
@@ -35,7 +36,8 @@ async def test_ospi_flash_fast_read(dut):
 async def test_ospi_flash_io_operations(dut):
     clk = dut.OSPI_CLK
     cs = dut.OSPI_CS
-    io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
+    io =  ["OSPI_IO0", "OSPI_IO1", "OSPI_IO2", "OSPI_IO3",
+"OSPI_IO4", "OSPI_IO5", "OSPI_IO6", "OSPI_IO7"]
     ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
@@ -64,7 +66,8 @@ async def test_ospi_flash_io_operations(dut):
 async def test_ospi_flash_hold_operations(dut):
     clk = dut.OSPI_CLK
     cs = dut.OSPI_CS
-    io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
+    io =  ["OSPI_IO0", "OSPI_IO1", "OSPI_IO2", "OSPI_IO3",
+"OSPI_IO4", "OSPI_IO5", "OSPI_IO6", "OSPI_IO7"]
     ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
