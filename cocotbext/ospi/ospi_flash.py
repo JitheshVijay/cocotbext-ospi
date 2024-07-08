@@ -1,14 +1,10 @@
-import cocotb
-from cocotbext.ospi.ospi_bus import OspiBus
-from cocotb.triggers import RisingEdge, Timer
-
 class OspiFlash:
     def __init__(self, dut, clk, cs, io):
         self.dut = dut
         self.clk = clk
         self.cs = cs
         self.io = io
-        self.ospi_bus = OspiBus(dut, "OSPI_CLK", "OSPI_CS", "OSPI_IO")
+        self.ospi_bus = OspiBus(dut, clk, cs, io)
 
     async def initialize(self):
         self.dut.reset_n <= 0
