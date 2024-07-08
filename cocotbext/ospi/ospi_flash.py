@@ -1,3 +1,7 @@
+import cocotb
+from cocotb.triggers import RisingEdge, Timer
+from .ospi_bus import OspiBus  
+
 class OspiFlash:
     def __init__(self, dut, clk, cs, io):
         self.dut = dut
