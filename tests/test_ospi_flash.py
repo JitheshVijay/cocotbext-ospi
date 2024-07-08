@@ -1,13 +1,12 @@
 import cocotb
 from cocotb.triggers import RisingEdge, Timer
-from cocotbext.ospi.ospi_flash import OspiFlash
+from cocotbext.ospi.ospi_flash import OspiFlash  # Adjust this import based on your file structure
 
 @cocotb.test()
 async def test_ospi_flash_fast_read(dut):
-    clk = dut.OSPI_CLK
-    cs = dut.OSPI_CS
-    io =  ["OSPI_IO0", "OSPI_IO1", "OSPI_IO2", "OSPI_IO3",
-"OSPI_IO4", "OSPI_IO5", "OSPI_IO6", "OSPI_IO7"]
+    clk = "OSPI_CLK"
+    cs = "OSPI_CS"
+    io = "OSPI_IO"
     ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
@@ -34,10 +33,9 @@ async def test_ospi_flash_fast_read(dut):
 
 @cocotb.test()
 async def test_ospi_flash_io_operations(dut):
-    clk = dut.OSPI_CLK
-    cs = dut.OSPI_CS
-    io =  ["OSPI_IO0", "OSPI_IO1", "OSPI_IO2", "OSPI_IO3",
-"OSPI_IO4", "OSPI_IO5", "OSPI_IO6", "OSPI_IO7"]
+    clk = "OSPI_CLK"
+    cs = "OSPI_CS"
+    io = "OSPI_IO"
     ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
@@ -64,10 +62,9 @@ async def test_ospi_flash_io_operations(dut):
 
 @cocotb.test()
 async def test_ospi_flash_hold_operations(dut):
-    clk = dut.OSPI_CLK
-    cs = dut.OSPI_CS
-    io =  ["OSPI_IO0", "OSPI_IO1", "OSPI_IO2", "OSPI_IO3",
-"OSPI_IO4", "OSPI_IO5", "OSPI_IO6", "OSPI_IO7"]
+    clk = "OSPI_CLK"
+    cs = "OSPI_CS"
+    io = "OSPI_IO"
     ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
@@ -83,5 +80,4 @@ async def test_ospi_flash_hold_operations(dut):
     await ospi.write(address, [0xC6], mode=1)
     read_data = await ospi.read(address, mode=1)
     assert read_data == [0xC6], f"Read data {read_data} does not match written data [0xC6] after releasing hold"
-
 
