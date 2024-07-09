@@ -4,11 +4,7 @@ class OspiBus:
     def __init__(self, dut, clk, cs, io):
         self.clk = getattr(dut, clk)
         self.cs = getattr(dut, cs)
-        # Check if `io` is a list of signals or a base string for concatenation
-        if isinstance(io, list):
-            self.io = [getattr(dut, signal) for signal in io]
-        else:
-            self.io = [getattr(dut, f"{io}{i}") for i in range(8)]
+        self.io = getattr(dut, io)
 
     async def write(self, command, address, data, mode=0):
         await self.send_command(command, mode)
