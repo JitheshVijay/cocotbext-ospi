@@ -7,7 +7,7 @@ class OspiFlash:
         self.dut = dut
         self.clk = clk
         self.cs = cs
-        self.io = io
+        self.io = [getattr(dut, signal) for signal in io]
         self.ospi_bus = OspiBus(dut, clk, cs, io)
 
     async def initialize(self):
