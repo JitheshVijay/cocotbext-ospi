@@ -40,12 +40,13 @@ module ospi_flash #(parameter WIDTH = 8) (
     end
 
     // Assign OSPI data lines based on operation mode
-    genvar i;
-    generate
-        for (i = 0; i < WIDTH; i = i + 1) begin : gen_io
-            assign OSPI_IO[i] = (write_enable && !OSPI_CS) ? data_in[i] : 1'bz;
-        end
-    endgenerate
+    assign OSPI_IO0 = (write_enable && !OSPI_CS) ? data_in[0] : 1'bz;
+    assign OSPI_IO1 = (write_enable && !OSPI_CS) ? data_in[1] : 1'bz;
+    assign OSPI_IO2 = (write_enable && !OSPI_CS) ? data_in[2] : 1'bz;
+    assign OSPI_IO3 = (write_enable && !OSPI_CS) ? data_in[3] : 1'bz;
+    assign OSPI_IO4 = (write_enable && !OSPI_CS) ? data_in[4] : 1'bz;
+    assign OSPI_IO5 = (write_enable && !OSPI_CS) ? data_in[5] : 1'bz;
+    assign OSPI_IO6 = (write_enable && !OSPI_CS) ? data_in[6] : 1'bz;
+    assign OSPI_IO7 = (write_enable && !OSPI_CS) ? data_in[7] : 1'bz;
 
 endmodule
-
