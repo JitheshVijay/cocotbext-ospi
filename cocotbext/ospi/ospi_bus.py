@@ -4,7 +4,7 @@ class OspiBus:
     def __init__(self, dut, clk, cs, io):
         self.clk = getattr(dut, clk)
         self.cs = getattr(dut, cs)
-        self.io = getattr(dut, io)
+        self.io = [getattr(dut, f"{io}_{i}") for i in range(8)]
 
     async def write(self, command, address, data, mode=0):
         await self.send_command(command, mode)
