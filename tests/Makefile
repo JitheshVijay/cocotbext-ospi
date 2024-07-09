@@ -38,7 +38,14 @@ iverilog_dump.v:
 	echo '    $$dumpvars(0, $(TOPLEVEL));' >> $@
 	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_CLK);' >> $@
 	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_CS);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO);' >> $@
+	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO0);' >> $@
+	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO1);' >> $@
+	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO2);' >> $@
+	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO3);' >> $@
+	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO4);' >> $@
+	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO5);' >> $@
+	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO6);' >> $@
+	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO7);' >> $@
 	echo 'end' >> $@
 	echo 'endmodule' >> $@
 
@@ -50,4 +57,3 @@ clean::
 	@rm -rf sim_build
 
 .PHONY: all sim clean
-
