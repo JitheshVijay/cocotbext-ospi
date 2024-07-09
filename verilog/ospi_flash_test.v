@@ -1,7 +1,7 @@
 module ospi_flash_test;
   parameter WIDTH = 8;
   reg OSPI_CLK;              // OSPI serial clock
-  wire [WIDTH-1:0] OSPI_IO;  // OSPI data lines (inout needs to be wire)
+  wire [7:0] OSPI_IO;  // OSPI data lines (inout needs to be wire)
   reg OSPI_CS;               // OSPI chip select
   reg reset_n;               // Active-low reset signal
   reg clk;                   // Clock signal
