@@ -1,6 +1,6 @@
 module ospi_flash #(parameter WIDTH = 8) (
     input wire OSPI_CLK,                 // OSPI serial clock input
-    inout wire [WIDTH-1:0] OSPI_IO,      // OSPI data lines (0 to WIDTH-1)
+    inout [7:0] OSPI_IO                  // OSPI data lines 
     input wire OSPI_CS,                  // Chip select (active low)
     input wire clk,                      // Clock input for internal logic
     input wire reset_n,                  // Active-low reset input
