@@ -27,8 +27,8 @@ ifeq ($(SIM), icarus)
 	endif
 endif
 
-# Set the PYTHONPATH to include the directory containing the OspiFlash module
-export PYTHONPATH := $(shell pwd)/../cocotbext/ospi:$(PYTHONPATH)
+# Set the PYTHONPATH to include the directory containing the OspiFlash module and the tests directory
+export PYTHONPATH := $(shell pwd)/..:$(shell pwd):$(PYTHONPATH)
 
 # Include the cocotb makefile
 include $(shell cocotb-config --makefiles)/Makefile.sim
@@ -60,3 +60,4 @@ clean::
 	@rm -rf sim_build
 
 .PHONY: all sim clean
+
