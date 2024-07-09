@@ -12,7 +12,7 @@ async def print_dut_signals(dut):
 async def test_ospi_flash_fast_read(dut):
     clk = "OSPI_CLK"
     cs = "OSPI_CS"
-    io = [f"OSPI_IO[{i}]" for i in range(8)]
+    io = ["OSPI_IO[0]", "OSPI_IO[1]", "OSPI_IO[2]", "OSPI_IO[3]", "OSPI_IO[4]", "OSPI_IO[5]", "OSPI_IO[6]", "OSPI_IO[7]"]
     ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
@@ -41,7 +41,7 @@ async def test_ospi_flash_fast_read(dut):
 async def test_ospi_flash_io_operations(dut):
     clk = "OSPI_CLK"
     cs = "OSPI_CS"
-    io = [f"OSPI_IO[{i}]" for i in range(8)]
+    io = ["OSPI_IO[0]", "OSPI_IO[1]", "OSPI_IO[2]", "OSPI_IO[3]", "OSPI_IO[4]", "OSPI_IO[5]", "OSPI_IO[6]", "OSPI_IO[7]"]
     ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
@@ -70,7 +70,7 @@ async def test_ospi_flash_io_operations(dut):
 async def test_ospi_flash_hold_operations(dut):
     clk = "OSPI_CLK"
     cs = "OSPI_CS"
-    io = [f"OSPI_IO[{i}]" for i in range(8)]
+    io = ["OSPI_IO[0]", "OSPI_IO[1]", "OSPI_IO[2]", "OSPI_IO[3]", "OSPI_IO[4]", "OSPI_IO[5]", "OSPI_IO[6]", "OSPI_IO[7]"]
     ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
