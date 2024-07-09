@@ -7,6 +7,8 @@ from cocotbext.ospi.ospi_flash import OspiFlash
 async def print_dut_signals(dut):
     log = SimLog("cocotb.print_dut_signals")
     log.info(f"Available attributes in dut: {dir(dut)}")
+    cocotb.log.info(f"OSPI_CLK: {dut.OSPI_CLK.value}")
+    cocotb.log.info(f"OSPI_CS: {dut.OSPI_CS.value}")
 
 @cocotb.test()
 async def test_ospi_flash_fast_read(dut):
