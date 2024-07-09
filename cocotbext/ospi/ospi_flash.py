@@ -1,6 +1,6 @@
 import cocotb
-from cocotb.triggers import RisingEdge, Timer
-from .ospi_bus import OspiBus  
+from cocotb.triggers import Timer
+from .ospi_bus import OspiBus
 
 class OspiFlash:
     def __init__(self, dut, clk, cs, io):
@@ -32,7 +32,4 @@ class OspiFlash:
     async def release_hold(self):
         self.dut.HOLD_N <= 1
         await Timer(10, units='ns')
-
-
-
-
+        
