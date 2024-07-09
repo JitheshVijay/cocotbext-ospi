@@ -1,11 +1,11 @@
+import cocotb
 from cocotb.triggers import RisingEdge
 
 class OspiBus:
     def __init__(self, dut, clk, cs, io):
         self.clk = getattr(dut, clk)
         self.cs = getattr(dut, cs)
-        self.io = [getattr(dut, f"{io}{i}") for i in range(8)] 
-
+        self.io = [getattr(dut, f"{io}{i}") for i in range(8)]
 
     async def write(self, command, address, data, mode=0):
         await self.send_command(command, mode)
@@ -15,17 +15,21 @@ class OspiBus:
     async def read(self, command, address, mode=0):
         await self.send_command(command, mode)
         await self.send_address(address, mode)
-        return await self.receive_data(mode)
+        return await self.receive_data(mode, len(address))
 
     async def send_command(self, command, mode):
-        self.io[0].value = command
+        self.cs.value = 0
+        lanes = self.get_lanes(mode)
+        for lane in lanes:
+            self.io[lane].value = command
         await RisingEdge(self.clk)
 
     async def send_address(self, address, mode):
         lanes = self.get_lanes(mode)
         for i in range(4):
+            byte = (address >> (i * 8)) & 0xFF
             for lane in lanes:
-                self.io[lane].value = (address >> (i * 8)) & 0xFF
+                self.io[lane].value = byte
             await RisingEdge(self.clk)
 
     async def send_data(self, data, mode):
@@ -35,15 +39,16 @@ class OspiBus:
                 self.io[lane].value = byte
             await RisingEdge(self.clk)
 
-    async def receive_data(self, mode):
+    async def receive_data(self, mode, length):
         lanes = self.get_lanes(mode)
         data = []
-        for _ in range(len(lanes)):
+        for _ in range(length):
             byte = 0
             for lane in lanes:
-                byte |= self.io[lane].value << (lane * 8)
+                byte |= self.io[lane].value.integer << (lane * 8)
             data.append(byte)
             await RisingEdge(self.clk)
+        self.cs.value = 1
         return data
 
     def get_lanes(self, mode):
@@ -57,4 +62,5 @@ class OspiBus:
             return [0, 1, 2, 3, 4, 5, 6, 7]
         else:
             raise ValueError(f"Unsupported mode: {mode}")
+
 
