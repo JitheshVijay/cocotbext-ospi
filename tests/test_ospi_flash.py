@@ -1,6 +1,12 @@
 import cocotb
 from cocotb.triggers import RisingEdge, Timer
+from cocotb.log import SimLog
 from cocotbext.ospi.ospi_flash import OspiFlash  
+
+@cocotb.test()
+async def print_dut_signals(dut):
+    log = SimLog("cocotb.print_dut_signals")
+    log.info(f"Available attributes in dut: {dir(dut)}")
 
 @cocotb.test()
 async def test_ospi_flash_fast_read(dut):
