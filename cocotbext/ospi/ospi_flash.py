@@ -11,9 +11,9 @@ class OspiFlash:
         self.ospi_bus = OspiBus(dut, clk, cs, io)
 
     async def initialize(self):
-        self.dut.reset_n <= 0
+        self.dut.reset_n.value = 0 
         await Timer(10, units='ns')
-        self.dut.reset_n <= 1
+        self.dut.reset_n.value = 1  
 
     async def write(self, address, data, mode=0):
         await self.ospi_bus.write(command=0x02, address=address, data=data, mode=mode)
