@@ -8,9 +8,16 @@ from cocotbext.ospi.ospi_flash import OspiFlash
 @cocotb.test()
 async def print_dut_signals(dut):
     log = SimLog("cocotb.print_dut_signals")
-    log.info(f"Available attributes in dut: {dir(dut)}")
-    cocotb.log.info(f"OSPI_CLK: {dut.OSPI_CLK.value}")
-    cocotb.log.info(f"OSPI_CS: {dut.OSPI_CS.value}")
+    log.info("OSPI_CLK: %s" % dut.OSPI_CLK.value)
+    log.info("OSPI_CS: %s" % dut.OSPI_CS.value)
+    log.info("OSPI_IO0: %s" % dut.OSPI_IO0.value)
+    log.info("OSPI_IO1: %s" % dut.OSPI_IO1.value)
+    log.info("OSPI_IO2: %s" % dut.OSPI_IO2.value)
+    log.info("OSPI_IO3: %s" % dut.OSPI_IO3.value)
+    log.info("OSPI_IO4: %s" % dut.OSPI_IO4.value)
+    log.info("OSPI_IO5: %s" % dut.OSPI_IO5.value)
+    log.info("OSPI_IO6: %s" % dut.OSPI_IO6.value)
+    log.info("OSPI_IO7: %s" % dut.OSPI_IO7.value)
 
 @cocotb.test()
 async def test_ospi_flash_fast_read(dut):
