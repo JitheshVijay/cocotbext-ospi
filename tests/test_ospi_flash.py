@@ -1,7 +1,7 @@
 import cocotb
 from cocotb.triggers import RisingEdge, Timer
 from cocotb.log import SimLog
-from .ospi_flash import OspiFlash
+from ospi_flash import OspiFlash
 
 @cocotb.test()
 async def print_dut_signals(dut):
