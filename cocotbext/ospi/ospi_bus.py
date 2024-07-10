@@ -5,7 +5,12 @@ class OspiBus:
     def __init__(self, dut, clk, cs, io):
         self.clk = getattr(dut, clk)
         self.cs = getattr(dut, cs)
-        self.io = [getattr(dut, f"{io}{i}") for i in range(8)]
+        self.io = [self.dut.OSPI_IO0, self.dut.OSPI_IO1, self.dut.OSPI_IO2, self.dut.OSPI_IO3, 
+                   self.dut.OSPI_IO4, self.dut.OSPI_IO5, self.dut.OSPI_IO6, self.dut.OSPI_IO7]
+
+    async def send_command(self, command, mode):
+        self.io[0].value = command
+        await Timer(10, units='ns')
 
     async def write(self, command, address, data, mode=0):
         await self.send_command(command, mode)
