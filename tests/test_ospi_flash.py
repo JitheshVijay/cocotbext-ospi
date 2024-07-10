@@ -3,7 +3,10 @@ from cocotb.triggers import RisingEdge, Timer
 from cocotb.log import SimLog
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'cocotbext/ospi/ospi_flash.py')))
+
+# Add the path to the directory containing ospi_flash.py to the system path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../cocotbext/ospi')))
+
 from ospi_flash import OspiFlash
 
 @cocotb.test()
@@ -81,5 +84,3 @@ async def test_ospi_flash_hold_operations(dut):
     await ospi.write(address, [0xC6], mode=1)
     read_data = await ospi.read(address, mode=1)
     assert read_data == [0xC6], f"Read data {read_data} does not match written data [0xC6] after releasing hold"
-
-
