@@ -13,10 +13,9 @@ async def print_dut_signals(dut):
 
 @cocotb.test()
 async def test_ospi_flash_fast_read(dut):
-    clk = "OSPI_CLK"
-    cs = "OSPI_CS"
-    io = [dut.OSPI_IO0, dut.OSPI_IO1, dut.OSPI_IO2, dut.OSPI_IO3, 
-          dut.OSPI_IO4, dut.OSPI_IO5, dut.OSPI_IO6, dut.OSPI_IO7]
+    clk = dut.OSPI_CLK
+    cs = dut.OSPI_CS
+    io = [dut.OSPI_IO0, dut.OSPI_IO1, dut.OSPI_IO2, dut.OSPI_IO3, dut.OSPI_IO4, dut.OSPI_IO5, dut.OSPI_IO6, dut.OSPI_IO7]
     ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
@@ -39,10 +38,9 @@ async def test_ospi_flash_fast_read(dut):
 
 @cocotb.test()
 async def test_ospi_flash_io_operations(dut):
-    clk = "OSPI_CLK"
-    cs = "OSPI_CS"
-    io = [dut.OSPI_IO0, dut.OSPI_IO1, dut.OSPI_IO2, dut.OSPI_IO3, 
-          dut.OSPI_IO4, dut.OSPI_IO5, dut.OSPI_IO6, dut.OSPI_IO7]
+    clk = dut.OSPI_CLK
+    cs = dut.OSPI_CS
+    io = [dut.OSPI_IO0, dut.OSPI_IO1, dut.OSPI_IO2, dut.OSPI_IO3, dut.OSPI_IO4, dut.OSPI_IO5, dut.OSPI_IO6, dut.OSPI_IO7]
     ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
@@ -65,10 +63,9 @@ async def test_ospi_flash_io_operations(dut):
 
 @cocotb.test()
 async def test_ospi_flash_hold_operations(dut):
-    clk = "OSPI_CLK"
-    cs = "OSPI_CS"
-    io = [dut.OSPI_IO0, dut.OSPI_IO1, dut.OSPI_IO2, dut.OSPI_IO3, 
-          dut.OSPI_IO4, dut.OSPI_IO5, dut.OSPI_IO6, dut.OSPI_IO7]
+    clk = dut.OSPI_CLK
+    cs = dut.OSPI_CS
+    io = [dut.OSPI_IO0, dut.OSPI_IO1, dut.OSPI_IO2, dut.OSPI_IO3, dut.OSPI_IO4, dut.OSPI_IO5, dut.OSPI_IO6, dut.OSPI_IO7]
     ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
