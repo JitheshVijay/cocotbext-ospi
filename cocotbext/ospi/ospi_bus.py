@@ -9,7 +9,9 @@ class OspiBus:
         self.io = io
 
     async def send_command(self, command, mode):
-        self.io[0].value = command
+        command_bits = format(command, f'0{len(self.io)}b')
+        for i, bit in enumerate(command_bits):
+            self.io[i].value = int(bit)
         await Timer(10, units='ns')
 
     async def write(self, command, address, data, mode=0):
