@@ -1,13 +1,8 @@
 import cocotb
 from cocotb.triggers import RisingEdge, Timer
 from cocotb.log import SimLog
-import sys
-import os
+from cocotbext.ospi.ospi_flash import OspiFlash
 
-# Add the path to the directory containing ospi_flash.py to the system path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../cocotbext/ospi')))
-
-from ospi_flash import OspiFlash
 
 @cocotb.test()
 async def print_dut_signals(dut):
