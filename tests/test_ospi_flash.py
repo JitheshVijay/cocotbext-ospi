@@ -2,7 +2,8 @@ import cocotb
 from cocotb.triggers import RisingEdge, Timer
 from cocotb.log import SimLog
 import sys
-sys.path.insert(0, 'cocotbext/ospi/ospi_flash.pys')
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'cocotbext/ospi/ospi_flash.py')))
 from ospi_flash import OspiFlash
 
 @cocotb.test()
