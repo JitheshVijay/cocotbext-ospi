@@ -1,5 +1,5 @@
 import cocotb
-from cocotb.triggers import RisingEdge
+from cocotb.triggers import RisingEdge, Timer
 
 class OspiBus:
     def __init__(self, dut, clk, cs, io):
