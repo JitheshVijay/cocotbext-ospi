@@ -1,5 +1,6 @@
 import cocotb
 from cocotb.triggers import Timer
+from cocotb.log import SimLog
 from cocotbext.ospi.ospi_bus import OspiBus
 from cocotbext.ospi.ospi_flash import OspiFlash
 
