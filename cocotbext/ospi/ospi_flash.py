@@ -1,6 +1,6 @@
 import cocotb
 from cocotb.triggers import Timer
-from .ospi_bus import OspiBus
+from cocotbext.ospi.ospi_bus import OspiBus
 
 class OspiFlash:
     def __init__(self, dut, clk, cs, io):
