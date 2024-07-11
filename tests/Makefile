@@ -29,6 +29,8 @@ endif
 
 # Set the PYTHONPATH to include the directory containing the OspiFlash module and the tests directory
 export PYTHONPATH := $(shell pwd)/..:$(shell pwd):$(PYTHONPATH)
+export COCOTB_HDL_TIMEUNIT
+export COCOTB_HDL_TIMEPRECISION
 
 # Include the cocotb makefile
 include $(shell cocotb-config --makefiles)/Makefile.sim
