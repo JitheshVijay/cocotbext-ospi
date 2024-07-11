@@ -1,8 +1,7 @@
 import cocotb
 from cocotb.triggers import Timer
 from cocotb.log import SimLog
-from cocotbext.ospi.ospi_bus import OspiBus
-from cocotbext.ospi.ospi_flash import OspiFlash
+from cocotbext.ospi import OspiBus, OspiFlash
 
 @cocotb.test()
 async def print_dut_signals(dut):
