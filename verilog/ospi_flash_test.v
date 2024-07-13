@@ -15,7 +15,14 @@ module ospi_flash_test;
   // Instantiate the ospi_flash module
   ospi_flash #(.WIDTH(WIDTH)) dut (
       .OSPI_CLK(OSPI_CLK),
-      .OSPI_IO({OSPI_IO7, OSPI_IO6, OSPI_IO5, OSPI_IO4, OSPI_IO3, OSPI_IO2, OSPI_IO1, OSPI_IO0}),
+      .OSPI_IO0(OSPI_IO[0]),
+      .OSPI_IO1(OSPI_IO[1]),
+      .OSPI_IO2(OSPI_IO[2]),
+      .OSPI_IO3(OSPI_IO[3]),
+      .OSPI_IO4(OSPI_IO[4]),
+      .OSPI_IO5(OSPI_IO[5]),
+      .OSPI_IO6(OSPI_IO[6]),
+      .OSPI_IO7(OSPI_IO[7]),
       .OSPI_CS(OSPI_CS),
       .clk(clk),
       .reset_n(reset_n),
@@ -26,10 +33,6 @@ module ospi_flash_test;
       .address(address),
       .data_out(data_out)
   );
-
-  // Generate individual OSPI_IO signals
-  wire OSPI_IO0, OSPI_IO1, OSPI_IO2, OSPI_IO3, OSPI_IO4, OSPI_IO5, OSPI_IO6, OSPI_IO7;
-  assign {OSPI_IO7, OSPI_IO6, OSPI_IO5, OSPI_IO4, OSPI_IO3, OSPI_IO2, OSPI_IO1, OSPI_IO0} = OSPI_IO;
 
   initial begin
       $dumpfile("ospi_flash_test.vcd");
@@ -48,6 +51,26 @@ module ospi_flash_test;
 
       // Apply reset
       #5 reset_n = 1;
+
+      // Test sequence
+      #10 write_enable = 1;
+      data_in = 8'hA5;
+      address = 8'h10;
+      OSPI_CS = 0;
+      #10 OSPI_CS = 1;
+      write_enable = 0;
+
+      #10 read_enable = 1;
+      OSPI_CS = 0;
+      #10 OSPI_CS = 1;
+      read_enable = 0;
+
+      #10 erase_enable = 1;
+      OSPI_CS = 0;
+      #10 OSPI_CS = 1;
+      erase_enable = 0;
+
+      #10 $finish;
   end
 
   // Clock generation
@@ -55,3 +78,4 @@ module ospi_flash_test;
   always #5 OSPI_CLK = ~OSPI_CLK;
 
 endmodule
+
