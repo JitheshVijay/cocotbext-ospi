@@ -33,12 +33,11 @@ class OspiBus:
             await RisingEdge(self.clk)
 
     async def send_address(self, address, mode):
-        lanes = self.get_lanes(mode)
-        for i in range(4):
-            byte = (address >> (i * 8)) & 0xFF
-            for lane in lanes:
-                self.io[lane].value = byte
-            await RisingEdge(self.clk)
+        for lane in range(len(self.io)):
+            byte = (address >> (8 * (len(self.io) - 1 - lane))) & 0xFF
+            # Assigning each bit to the signal individually if it's a 1-bit signal
+            for bit in range(8):
+                self.io[lane * 8 + bit].value = (byte >> bit) & 1
 
     async def send_data(self, data, mode):
         lanes = self.get_lanes(mode)
