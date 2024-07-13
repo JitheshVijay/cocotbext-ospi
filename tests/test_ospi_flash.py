@@ -21,28 +21,53 @@ async def print_dut_signals(dut):
 
 @cocotb.test()
 async def test_ospi_flash_fast_read(dut):
+    # Add debug print statements
+    dut._log.info("Starting test_ospi_flash_fast_read")
+    
     clk = dut.OSPI_CLK
     cs = dut.OSPI_CS
     io = [dut.OSPI_IO0, dut.OSPI_IO1, dut.OSPI_IO2, dut.OSPI_IO3, dut.OSPI_IO4, dut.OSPI_IO5, dut.OSPI_IO6, dut.OSPI_IO7]
+    
+    dut._log.info("Creating OspiFlash instance")
     ospi = OspiFlash(dut, clk, cs, io)
+    
+    dut._log.info("Initializing OspiFlash")
     await ospi.initialize()
-
+    
+    # Add more debug statements after initialization
+    await RisingEdge(clk)
+    dut._log.info("Initialization complete, starting tests")
+    
     address = 0x01
+    
+    # Single mode test
+    dut._log.info(f"Writing 0xA5 to address {hex(address)} in single mode")
     await ospi.write(address, [0xA5], mode=0)
     read_data = await ospi.fast_read(address, mode=0)
+    dut._log.info(f"Read data {read_data} in single mode")
     assert read_data == [0xA5], f"Fast read data {read_data} does not match written data [0xA5] in single mode"
-
+    
+    # Dual mode test
+    dut._log.info(f"Writing 0xA6 to address {hex(address)} in dual mode")
     await ospi.write(address, [0xA6], mode=1)
     read_data = await ospi.fast_read(address, mode=1)
+    dut._log.info(f"Read data {read_data} in dual mode")
     assert read_data == [0xA6], f"Fast read data {read_data} does not match written data [0xA6] in dual mode"
-
+    
+    # Quad mode test
+    dut._log.info(f"Writing 0xA7 to address {hex(address)} in quad mode")
     await ospi.write(address, [0xA7], mode=2)
     read_data = await ospi.fast_read(address, mode=2)
+    dut._log.info(f"Read data {read_data} in quad mode")
     assert read_data == [0xA7], f"Fast read data {read_data} does not match written data [0xA7] in quad mode"
-
+    
+    # Octal mode test
+    dut._log.info(f"Writing 0xA8 to address {hex(address)} in octal mode")
     await ospi.write(address, [0xA8], mode=3)
     read_data = await ospi.fast_read(address, mode=3)
+    dut._log.info(f"Read data {read_data} in octal mode")
     assert read_data == [0xA8], f"Fast read data {read_data} does not match written data [0xA8] in octal mode"
+
 
 @cocotb.test()
 async def test_ospi_flash_io_operations(dut):
