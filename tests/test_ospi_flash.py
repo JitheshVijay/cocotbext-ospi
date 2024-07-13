@@ -1,5 +1,7 @@
 import cocotb
 from cocotb.triggers import Timer
+from cocotb.triggers import RisingEdge
+from cocotb.result import TestFailure
 from cocotb.log import SimLog
 from cocotbext.ospi.ospi_bus import OspiBus
 from cocotbext.ospi.ospi_flash import OspiFlash
@@ -23,8 +25,9 @@ async def print_dut_signals(dut):
 async def test_ospi_flash_fast_read(dut):
     # Add debug print statements
     dut._log.info("Starting test_ospi_flash_fast_read")
-    
+
     clk = dut.OSPI_CLK
+    await RisingEdge(clk)
     cs = dut.OSPI_CS
     io = [dut.OSPI_IO0, dut.OSPI_IO1, dut.OSPI_IO2, dut.OSPI_IO3, dut.OSPI_IO4, dut.OSPI_IO5, dut.OSPI_IO6, dut.OSPI_IO7]
     
