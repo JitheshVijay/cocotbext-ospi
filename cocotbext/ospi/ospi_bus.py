@@ -1,3 +1,4 @@
+import cocotb
 from cocotb.triggers import RisingEdge, Timer
 
 class OspiBus:
