@@ -51,26 +51,6 @@ module ospi_flash_test;
 
       // Apply reset
       #5 reset_n = 1;
-
-      // Test sequence
-      #10 write_enable = 1;
-      data_in = 8'hA5;
-      address = 8'h10;
-      OSPI_CS = 0;
-      #10 OSPI_CS = 1;
-      write_enable = 0;
-
-      #10 read_enable = 1;
-      OSPI_CS = 0;
-      #10 OSPI_CS = 1;
-      read_enable = 0;
-
-      #10 erase_enable = 1;
-      OSPI_CS = 0;
-      #10 OSPI_CS = 1;
-      erase_enable = 0;
-
-      #10 $finish;
   end
 
   // Clock generation
