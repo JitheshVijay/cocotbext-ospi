@@ -32,4 +32,4 @@ class OspiFlash:
     async def release_hold(self):
         self.dut.HOLD_N <= 1
         await Timer(10, units='ns')
-        
+
