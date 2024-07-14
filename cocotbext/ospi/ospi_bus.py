@@ -1,4 +1,3 @@
-import cocotb
 from cocotb.triggers import RisingEdge, Timer
 
 class OspiBus:
@@ -69,5 +68,6 @@ class OspiBus:
             return [0, 1, 2, 3, 4, 5, 6, 7]
         else:
             raise ValueError(f"Unsupported mode: {mode}")
+
 
 
