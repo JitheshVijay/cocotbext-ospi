@@ -41,16 +41,6 @@ iverilog_dump.v:
 	echo 'initial begin' >> $@
 	echo '    $$dumpfile("$(TOPLEVEL).fst");' >> $@
 	echo '    $$dumpvars(0, $(TOPLEVEL));' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_CLK);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_CS);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO0);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO1);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO2);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO3);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO4);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO5);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO6);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO7);' >> $@
 	echo 'end' >> $@
 	echo 'endmodule' >> $@
 
