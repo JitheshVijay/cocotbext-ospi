@@ -1,7 +1,5 @@
 import cocotb
-from cocotb.triggers import Timer
 from cocotb.triggers import RisingEdge
-from cocotb.result import TestFailure
 from cocotb.log import SimLog
 from cocotbext.ospi.ospi_bus import OspiBus
 from cocotbext.ospi.ospi_flash import OspiFlash
@@ -21,6 +19,7 @@ async def print_dut_signals(dut):
     log.info("OSPI_IO6: %s" % dut.OSPI_IO6.value)
     log.info("OSPI_IO7: %s" % dut.OSPI_IO7.value)
 
+
 @cocotb.test()
 async def test_ospi_flash_fast_read(dut):
     dut._log.info("Starting test_ospi_flash_fast_read")
@@ -29,26 +28,26 @@ async def test_ospi_flash_fast_read(dut):
     await RisingEdge(clk)
     cs = dut.OSPI_CS
     io = [dut.OSPI_IO0, dut.OSPI_IO1, dut.OSPI_IO2, dut.OSPI_IO3, dut.OSPI_IO4, dut.OSPI_IO5, dut.OSPI_IO6, dut.OSPI_IO7]
-    
+
     dut._log.info("Creating OspiFlash instance")
     try:
         ospi = OspiFlash(dut, clk, cs, io)
     except Exception as e:
         dut._log.error(f"Failed to create OspiFlash instance: {e}")
         raise
-    
+
     dut._log.info("Initializing OspiFlash")
     try:
         await ospi.initialize()
     except Exception as e:
         dut._log.error(f"Initialization failed: {e}")
         raise
-    
+
     await RisingEdge(clk)
     dut._log.info("Initialization complete, starting tests")
-    
+
     address = 0x01
-    
+
     try:
         # Single mode test
         dut._log.info(f"Writing 0xA5 to address {hex(address)} in single mode")
@@ -59,7 +58,7 @@ async def test_ospi_flash_fast_read(dut):
     except Exception as e:
         dut._log.error(f"Single mode test failed: {e}")
         raise
-    
+
     try:
         # Dual mode test
         dut._log.info(f"Writing 0xA6 to address {hex(address)} in dual mode")
@@ -70,7 +69,7 @@ async def test_ospi_flash_fast_read(dut):
     except Exception as e:
         dut._log.error(f"Dual mode test failed: {e}")
         raise
-    
+
     try:
         # Quad mode test
         dut._log.info(f"Writing 0xA7 to address {hex(address)} in quad mode")
@@ -81,7 +80,7 @@ async def test_ospi_flash_fast_read(dut):
     except Exception as e:
         dut._log.error(f"Quad mode test failed: {e}")
         raise
-    
+
     try:
         # Octal mode test
         dut._log.info(f"Writing 0xA8 to address {hex(address)} in octal mode")
@@ -103,21 +102,27 @@ async def test_ospi_flash_io_operations(dut):
     await ospi.initialize()
 
     address = 0x02
-    await ospi.write(address, [0xB5], mode=0)
-    read_data = await ospi.read(address, mode=0)
-    assert read_data == [0xB5], f"Read data {read_data} does not match written data [0xB5] in single mode"
 
-    await ospi.write(address, [0xB6], mode=1)
-    read_data = await ospi.read(address, mode=1)
-    assert read_data == [0xB6], f"Read data {read_data} does not match written data [0xB6] in dual mode"
+    try:
+        await ospi.write(address, [0xB5], mode=0)
+        read_data = await ospi.read(address, mode=0)
+        assert read_data == [0xB5], f"Read data {read_data} does not match written data [0xB5] in single mode"
 
-    await ospi.write(address, [0xB7], mode=2)
-    read_data = await ospi.read(address, mode=2)
-    assert read_data == [0xB7], f"Read data {read_data} does not match written data [0xB7] in quad mode"
+        await ospi.write(address, [0xB6], mode=1)
+        read_data = await ospi.read(address, mode=1)
+        assert read_data == [0xB6], f"Read data {read_data} does not match written data [0xB6] in dual mode"
 
-    await ospi.write(address, [0xB8], mode=3)
-    read_data = await ospi.read(address, mode=3)
-    assert read_data == [0xB8], f"Read data {read_data} does not match written data [0xB8] in octal mode"
+        await ospi.write(address, [0xB7], mode=2)
+        read_data = await ospi.read(address, mode=2)
+        assert read_data == [0xB7], f"Read data {read_data} does not match written data [0xB7] in quad mode"
+
+        await ospi.write(address, [0xB8], mode=3)
+        read_data = await ospi.read(address, mode=3)
+        assert read_data == [0xB8], f"Read data {read_data} does not match written data [0xB8] in octal mode"
+    except Exception as e:
+        dut._log.error(f"IO operation test failed: {e}")
+        raise
+
 
 @cocotb.test()
 async def test_ospi_flash_hold_operations(dut):
@@ -128,12 +133,18 @@ async def test_ospi_flash_hold_operations(dut):
     await ospi.initialize()
 
     address = 0x03
-    await ospi.write(address, [0xC5], mode=0)
-    await ospi.hold_operation()
-    read_data = await ospi.read(address, mode=0)
-    assert read_data == [0xC5], f"Read data {read_data} does not match written data [0xC5] after hold operation"
 
-    await ospi.release_hold()
-    await ospi.write(address, [0xC6], mode=1)
-    read_data = await ospi.read(address, mode=1)
-    assert read_data == [0xC6], f"Read data {read_data} does not match written data [0xC6] after releasing hold"
+    try:
+        await ospi.write(address, [0xC5], mode=0)
+        await ospi.hold_operation()
+        read_data = await ospi.read(address, mode=0)
+        assert read_data == [0xC5], f"Read data {read_data} does not match written data [0xC5] after hold operation"
+
+        await ospi.release_hold()
+        await ospi.write(address, [0xC6], mode=1)
+        read_data = await ospi.read(address, mode=1)
+        assert read_data == [0xC6], f"Read data {read_data} does not match written data [0xC6] after releasing hold"
+    except Exception as e:
+        dut._log.error(f"Hold operation test failed: {e}")
+        raise
+
