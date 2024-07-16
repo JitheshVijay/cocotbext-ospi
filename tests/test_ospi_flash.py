@@ -49,6 +49,7 @@ async def test_ospi_flash_fast_read(dut):
     dut._log.info("Initialization complete, starting tests")
     
     address = 0x01
+    length = 1
     
     try:
         # Single mode test
