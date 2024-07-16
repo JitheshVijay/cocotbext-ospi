@@ -99,7 +99,11 @@ async def test_ospi_flash_fast_read(dut):
 
 @cocotb.test()
 async def test_ospi_flash_io_operations(dut):
+    dut._log.info("Starting test_ospi_flash_fast_read")
+    c = Clock(dut.OSPI_CLK, 10, 'ns')
+    await cocotb.start(c.start())
     clk = dut.OSPI_CLK
+    await RisingEdge(clk)
     cs = dut.OSPI_CS
     io = [dut.OSPI_IO0, dut.OSPI_IO1, dut.OSPI_IO2, dut.OSPI_IO3, dut.OSPI_IO4, dut.OSPI_IO5, dut.OSPI_IO6, dut.OSPI_IO7]
     ospi = OspiFlash(dut, clk, cs, io)
@@ -124,7 +128,11 @@ async def test_ospi_flash_io_operations(dut):
 
 @cocotb.test()
 async def test_ospi_flash_hold_operations(dut):
+    dut._log.info("Starting test_ospi_flash_fast_read")
+    c = Clock(dut.OSPI_CLK, 10, 'ns')
+    await cocotb.start(c.start())
     clk = dut.OSPI_CLK
+    await RisingEdge(clk)
     cs = dut.OSPI_CS
     io = [dut.OSPI_IO0, dut.OSPI_IO1, dut.OSPI_IO2, dut.OSPI_IO3, dut.OSPI_IO4, dut.OSPI_IO5, dut.OSPI_IO6, dut.OSPI_IO7]
     ospi = OspiFlash(dut, clk, cs, io)
