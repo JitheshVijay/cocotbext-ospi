@@ -21,7 +21,7 @@ class OspiBus:
         await self.send_data(data, mode)
 
     async def read(self, command, address, mode, length):
-        if not isinstance(address, (list, tuple)):
+        if not isinstance(address, (list, Tuple)):
             address = [address]
         return await self.receive_data(mode, len(address))
 
