@@ -39,11 +39,11 @@ class OspiBus:
             await self.send_byte(byte, mode)
 
     async def send_data(self, data, mode):
-        lanes = self.get_lanes(mode)
         for byte in data:
-            for lane in lanes:
-                self.io[lane].value = byte
-            await RisingEdge(self.clk)
+            for i in range(8):
+                bit = (byte >> (7 - i)) & 1
+                self.io[i].value = bit
+                await RisingEdge(self.clk)
 
     async def receive_data(self, mode, length):
         data = []
