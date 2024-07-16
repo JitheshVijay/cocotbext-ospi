@@ -1,3 +1,4 @@
+
 import cocotb
 from cocotb.triggers import Timer
 from cocotb.triggers import RisingEdge
@@ -55,7 +56,7 @@ async def test_ospi_flash_fast_read(dut):
         # Single mode test
         dut._log.info(f"Writing 0xA5 to address {hex(address)} in single mode")
         await ospi.write(address, [0xA5], mode=0)
-        read_data = await ospi.fast_read(address, length, mode=0)
+        read_data = await ospi.fast_read([address], length, mode=0)
         dut._log.info(f"Read data {read_data} in single mode")
         assert read_data == [0xA5], f"Fast read data {read_data} does not match written data [0xA5] in single mode"
     except Exception as e:
@@ -66,7 +67,7 @@ async def test_ospi_flash_fast_read(dut):
         # Dual mode test
         dut._log.info(f"Writing 0xA6 to address {hex(address)} in dual mode")
         await ospi.write(address, [0xA6], mode=1)
-        read_data = await ospi.fast_read(address, length, mode=1)
+        read_data = await ospi.fast_read([address], length, mode=1)
         dut._log.info(f"Read data {read_data} in dual mode")
         assert read_data == [0xA6], f"Fast read data {read_data} does not match written data [0xA6] in dual mode"
     except Exception as e:
@@ -77,7 +78,7 @@ async def test_ospi_flash_fast_read(dut):
         # Quad mode test
         dut._log.info(f"Writing 0xA7 to address {hex(address)} in quad mode")
         await ospi.write(address, [0xA7], mode=2)
-        read_data = await ospi.fast_read(address, length, mode=2)
+        read_data = await ospi.fast_read([address], length, mode=2)
         dut._log.info(f"Read data {read_data} in quad mode")
         assert read_data == [0xA7], f"Fast read data {read_data} does not match written data [0xA7] in quad mode"
     except Exception as e:
@@ -88,7 +89,7 @@ async def test_ospi_flash_fast_read(dut):
         # Octal mode test
         dut._log.info(f"Writing 0xA8 to address {hex(address)} in octal mode")
         await ospi.write(address, [0xA8], mode=3)
-        read_data = await ospi.fast_read(address, length, mode=3)
+        read_data = await ospi.fast_read([address], length, mode=3)
         dut._log.info(f"Read data {read_data} in octal mode")
         assert read_data == [0xA8], f"Fast read data {read_data} does not match written data [0xA8] in octal mode"
     except Exception as e:
