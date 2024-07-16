@@ -19,11 +19,12 @@ class OspiBus:
         await self.send_address(address, mode)
         await self.send_data(data, mode)
 
-    async def read(self, command, address, mode=0):
+    async def read(self, command, address, mode=0, length=1):
         await self.send_command(command, mode)
         await self.send_address(address, mode)
         return await self.receive_data(mode, len(address))
-
+        pass
+        
     async def send_byte(self, byte, mode):
         lanes = self.get_lanes(mode)
         for bit_position in range(8):
