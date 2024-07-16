@@ -19,11 +19,11 @@ class OspiBus:
         await self.send_address(address, mode)
         await self.send_data(data, mode)
 
-    async def read(self, command, address, mode=0, length=1):
-        await self.send_command(command, mode)
-        await self.send_address(address, mode)
+    async def read(self, command, address, mode, length):
+        if not isinstance(address, (list, tuple)):
+            address = [address]
         return await self.receive_data(mode, len(address))
-        pass
+
         
     async def send_byte(self, byte, mode):
         lanes = self.get_lanes(mode)
