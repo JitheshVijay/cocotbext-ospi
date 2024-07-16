@@ -18,8 +18,11 @@ class OspiFlash:
     async def write(self, address, data, mode=0):
         await self.ospi_bus.write(command=0x02, address=address, data=data, mode=mode)
 
-    async def read(self, address, length, mode=0):
-        return await self.ospi_bus.read(command=0x03, address=address, mode=mode, length=length)
+    async def fast_read(self, address, length, mode=0):
+        if not isinstance(address, (list, tuple)):
+            address = [address]
+        return await self.ospi_bus.read(command=0x0B, address=address, mode=mode, length=length)
+
 
     async def fast_read(self, address, length, mode=0):
         return await self.ospi_bus.read(command=0x0B, address=address, mode=mode, length=length)
