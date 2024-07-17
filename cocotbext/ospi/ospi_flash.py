@@ -8,7 +8,7 @@ class OspiFlash:
         self.clk = clk
         self.cs = cs
         self.io = io
-        self.ospi_bus = OspiBus(dut, clk, cs, io)
+        self.ospi = OspiBus(dut, clk, cs, io)
 
     async def initialize(self):
         self.dut.reset_n.value = 0 
