@@ -23,7 +23,6 @@ async def test_ospi_flash_fast_read(dut):
     # Create a clock with a period of 10 ns (100 MHz)
     c = Clock(dut.OSPI_CLK, 10, 'ns')
     await cocotb.start(c.start())
-    await cocotb.start(monitor_signals(dut))
     
     clk = dut.OSPI_CLK
     cs = dut.OSPI_CS
@@ -64,7 +63,6 @@ async def test_ospi_flash_io_operations(dut):
     dut._log.info("Starting test_ospi_flash_io_operations")
     c = Clock(dut.OSPI_CLK, 10, 'ns')
     await cocotb.start(c.start())
-    await cocotb.start(monitor_signals(dut))
     
     clk = dut.OSPI_CLK
     cs = dut.OSPI_CS
@@ -105,7 +103,6 @@ async def test_ospi_flash_hold_operations(dut):
     dut._log.info("Starting test_ospi_flash_hold_operations")
     c = Clock(dut.OSPI_CLK, 10, 'ns')
     await cocotb.start(c.start())
-    await cocotb.start(monitor_signals(dut))
     
     clk = dut.OSPI_CLK
     cs = dut.OSPI_CS
@@ -133,5 +130,6 @@ async def test_ospi_flash_hold_operations(dut):
     read_data = await ospi.read(address, length, mode=1)
     dut._log.info(f"After releasing hold: Written data [0xC6], Read data {read_data}")
     assert read_data == [0xC6], f"Read data {read_data} does not match written data [0xC6] after releasing hold"
+
 
 
