@@ -17,101 +17,39 @@ class OspiFlash:
 
     async def write(self, address, data, mode):
         self.dut._log.info(f"Writing data {data} to address {address} in mode {mode}")
-        self.ospi.start_transaction()
         
         if mode == 0:  # Single mode
-            self.ospi.cs.value = 0
-            await self.ospi.write_byte(0x02)  # Command for single write
-            await self.ospi.write_byte((address >> 16) & 0xFF)
-            await self.ospi.write_byte((address >> 8) & 0xFF)
-            await self.ospi.write_byte(address & 0xFF)
-            for byte in data:
-                await self.ospi.write_byte(byte)
-            self.ospi.cs.value = 1
+            await self.ospi.write(0x02, address, data, mode)
         
         elif mode == 1:  # Dual mode
-            self.ospi.cs.value = 0
-            await self.ospi.write_byte(0xA2)  # Hypothetical command for dual write
-            await self.ospi.write_byte((address >> 16) & 0xFF)
-            await self.ospi.write_byte((address >> 8) & 0xFF)
-            await self.ospi.write_byte(address & 0xFF)
-            for byte in data:
-                await self.ospi.write_byte(byte)
-            self.ospi.cs.value = 1
+            await self.ospi.write(0xA2, address, data, mode)  # Hypothetical command for dual write
         
         elif mode == 2:  # Quad mode
-            self.ospi.cs.value = 0
-            await self.ospi.write_byte(0x32)  # Hypothetical command for quad write
-            await self.ospi.write_byte((address >> 16) & 0xFF)
-            await self.ospi.write_byte((address >> 8) & 0xFF)
-            await self.ospi.write_byte(address & 0xFF)
-            for byte in data:
-                await self.ospi.write_byte(byte)
-            self.ospi.cs.value = 1
+            await self.ospi.write(0x32, address, data, mode)  # Hypothetical command for quad write
 
         elif mode == 3:  # Octal mode
-            self.ospi.cs.value = 0
-            await self.ospi.write_byte(0x82)  # Hypothetical command for octal write
-            await self.ospi.write_byte((address >> 16) & 0xFF)
-            await self.ospi.write_byte((address >> 8) & 0xFF)
-            await self.ospi.write_byte(address & 0xFF)
-            for byte in data:
-                await self.ospi.write_byte(byte)
-            self.ospi.cs.value = 1
-
-        self.ospi.end_transaction()
+            await self.ospi.write(0x82, address, data, mode)  # Hypothetical command for octal write
 
     async def read(self, address, length, mode):
         self.dut._log.info(f"Reading data from address {address} with length {length} in mode {mode}")
-        self.ospi.start_transaction()
-
-        read_data = []
+        
         if mode == 0:  # Single mode
-            self.ospi.cs.value = 0
-            await self.ospi.write_byte(0x03)  # Command for single read
-            await self.ospi.write_byte((address >> 16) & 0xFF)
-            await self.ospi.write_byte((address >> 8) & 0xFF)
-            await self.ospi.write_byte(address & 0xFF)
-            for _ in range(length):
-                read_data.append(await self.ospi.read_byte())
-            self.ospi.cs.value = 1
-
+            read_data = await self.ospi.read(0x03, address, mode, length)  # Command for single read
+        
         elif mode == 1:  # Dual mode
-            self.ospi.cs.value = 0
-            await self.ospi.write_byte(0xBB)  # Hypothetical command for dual read
-            await self.ospi.write_byte((address >> 16) & 0xFF)
-            await self.ospi.write_byte((address >> 8) & 0xFF)
-            await self.ospi.write_byte(address & 0xFF)
-            for _ in range(length):
-                read_data.append(await self.ospi.read_byte())
-            self.ospi.cs.value = 1
-
+            read_data = await self.ospi.read(0xBB, address, mode, length)  # Hypothetical command for dual read
+        
         elif mode == 2:  # Quad mode
-            self.ospi.cs.value = 0
-            await self.ospi.write_byte(0xEB)  # Hypothetical command for quad read
-            await self.ospi.write_byte((address >> 16) & 0xFF)
-            await self.ospi.write_byte((address >> 8) & 0xFF)
-            await self.ospi.write_byte(address & 0xFF)
-            for _ in range(length):
-                read_data.append(await self.ospi.read_byte())
-            self.ospi.cs.value = 1
+            read_data = await self.ospi.read(0xEB, address, mode, length)  # Hypothetical command for quad read
 
         elif mode == 3:  # Octal mode
-            self.ospi.cs.value = 0
-            await self.ospi.write_byte(0xEC)  # Hypothetical command for octal read
-            await self.ospi.write_byte((address >> 16) & 0xFF)
-            await self.ospi.write_byte((address >> 8) & 0xFF)
-            await self.ospi.write_byte(address & 0xFF)
-            for _ in range(length):
-                read_data.append(await self.ospi.read_byte())
-            self.ospi.cs.value = 1
+            read_data = await self.ospi.read(0xEC, address, mode, length)  # Hypothetical command for octal read
 
-        self.ospi.end_transaction()
         self.dut._log.info(f"Read data {read_data}")
         return read_data
 
     async def fast_read(self, address, length, mode=0):
-        return await self.ospi_bus.read(command=0x0B, address=address, mode=mode, length=length)
+        return await self.ospi.read(0x0B, address, mode, length)  # Command for fast read
 
     async def hold_operation(self):
         if hasattr(self.dut, 'HOLD_N'):
