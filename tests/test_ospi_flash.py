@@ -38,6 +38,14 @@ async def monitor_signals(dut):
 
 @cocotb.test()
 async def test_ospi_flash_fast_read(dut):
+
+    clk = dut.OSPI_CLK
+    cs = dut.OSPI_CS
+    io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
+    
+    ospi = OspiFlash(dut, clk, cs, io)
+    await ospi.initialize()
+
     # Write data to flash
     address = 0x0001
     write_data = [0xA5]
