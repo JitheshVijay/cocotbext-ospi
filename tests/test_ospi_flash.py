@@ -38,9 +38,6 @@ async def monitor_signals(dut):
 
 @cocotb.test()
 async def test_ospi_flash_fast_read(dut):
-    # Reset and initialize
-    await initialize(dut)
-
     # Write data to flash
     address = 0x0001
     write_data = [0xA5]
