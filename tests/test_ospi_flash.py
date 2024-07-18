@@ -13,10 +13,28 @@ async def monitor_signals(dut):
     """Coroutine to monitor and log OSPI signals."""
     while True:
         await RisingEdge(dut.OSPI_CLK)
-        cs = dut.OSPI_CS.value.integer
-        clk = dut.OSPI_CLK.value.integer
-        io = [getattr(dut, f"OSPI_IO{i}").value.integer for i in range(8)]
-        dut._log.info(f"CS: {cs}, CLK: {clk}, IO: {io}")
+        cs_value = dut.OSPI_CS.value.binstr  # Get binary string representation
+        if 'x' in cs_value or 'z' in cs_value:
+            cs = None  # Or any other default/error value
+        else:
+            cs = int(cs_value, 2)
+        
+        clk_value = dut.OSPI_CLK.value.binstr
+        if 'x' in clk_value or 'z' in clk_value:
+            clk = None
+        else:
+            clk = int(clk_value, 2)
+        
+        io_values = []
+        for i in range(8):
+            io_value = getattr(dut, f"OSPI_IO{i}").value.binstr
+            if 'x' in io_value or 'z' in io_value:
+                io = None
+            else:
+                io = int(io_value, 2)
+            io_values.append(io)
+        
+        dut._log.info(f"CS: {cs}, CLK: {clk}, IO: {io_values}")
 
 @cocotb.test()
 async def test_ospi_flash_fast_read(dut):
