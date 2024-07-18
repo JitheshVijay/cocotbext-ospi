@@ -42,10 +42,10 @@ async def test_ospi_flash_fast_read(dut):
     address = 0x0001
     write_data = [0xA5]
     cocotb.log.info(f"Writing data {write_data} to address {address}")
-    await write_flash(dut, address, write_data)
+    await ospi.write(dut, address, write_data)
 
     # Read data from flash
-    read_data = await read_flash(dut, address, len(write_data))
+    read_data = await ospi.read(dut, address, len(write_data))
     cocotb.log.info(f"Read data {read_data} from address {address}")
 
     # Assert that the read data matches the written data
