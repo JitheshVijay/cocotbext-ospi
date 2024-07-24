@@ -1,60 +1,156 @@
 import cocotb
-from cocotb.triggers import Timer
-from cocotb.triggers import RisingEdge
+from cocotb.triggers import Timer, RisingEdge
 from cocotb.result import TestFailure
 from cocotb.log import SimLog
-from cocotbext.ospi.ospi_bus import OspiBus
 from cocotbext.ospi.ospi_flash import OspiFlash
 from cocotb.clock import Clock
 
-
-@cocotb.coroutine
-async def monitor_signals(dut):
-    """Coroutine to monitor and log OSPI signals."""
-    while True:
-        await RisingEdge(dut.OSPI_CLK)
-        cs_value = dut.OSPI_CS.value.binstr  # Get binary string representation
-        if 'x' in cs_value or 'z' in cs_value:
-            cs = None  # Or any other default/error value
-        else:
-            cs = int(cs_value, 2)
-        
-        clk_value = dut.OSPI_CLK.value.binstr
-        if 'x' in clk_value or 'z' in clk_value:
-            clk = None
-        else:
-            clk = int(clk_value, 2)
-        
-        io_values = []
-        for i in range(8):
-            io_value = getattr(dut, f"OSPI_IO{i}").value.binstr
-            if 'x' in io_value or 'z' in io_value:
-                io = None
-            else:
-                io = int(io_value, 2)
-            io_values.append(io)
-        
-        dut._log.info(f"CS: {cs}, CLK: {clk}, IO: {io_values}")
+@cocotb.test()
+async def print_dut_signals(dut):
+    """Test to print DUT signals."""
+    log = SimLog("cocotb.print_dut_signals")
+    log.info("OSPI_CLK: %s" % dut.OSPI_CLK.value)
+    log.info("OSPI_CS: %s" % dut.OSPI_CS.value)
+    for i in range(8):
+        log.info(f"OSPI_IO{i}: %s" % getattr(dut, f"OSPI_IO{i}").value)
 
 @cocotb.test()
 async def test_ospi_flash_fast_read(dut):
-
+    """Test to validate fast read operations in different modes."""
+    dut._log.info("Starting test_ospi_flash_fast_read")
+    c = Clock(dut.OSPI_CLK, 10, 'ns')
+    await cocotb.start(c.start())
+    
     clk = dut.OSPI_CLK
+    await RisingEdge(dut.OSPI_CLK)
+    cs = dut.OSPI_CS
+    io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
+    
+    ospi = OspiFlash(dut, clk, cs, io)
+    await ospi.initialize()
+    
+    address = 0x01
+    length = 1
+
+    # Single mode test
+    dut._log.info(f"Writing to address {address:#04x} data: [0xA5] in single mode")
+    await ospi.write(address, [0xA5], mode=0)
+    dut._log.info(f"Reading from address {address:#04x} in single mode")
+    read_data = await ospi.read(address, length, mode=0)
+    dut._log.info(f"Read data {read_data} in single mode")
+    assert read_data == [0xA5], f"Fast read data {read_data} does not match written data [0xA5] in single mode"
+    
+    # Dual mode test
+    dut._log.info(f"Writing to address {address:#04x} data: [0xA6] in dual mode")
+    await ospi.write(address, [0xA6], mode=1)
+    dut._log.info(f"Reading from address {address:#04x} in dual mode")
+    read_data = await ospi.read(address, length, mode=1)
+    dut._log.info(f"Read data {read_data} in dual mode")
+    assert read_data == [0xA6], f"Fast read data {read_data} does not match written data [0xA6] in dual mode"
+    
+    # Quad mode test
+    dut._log.info(f"Writing to address {address:#04x} data: [0xA7] in quad mode")
+    await ospi.write(address, [0xA7], mode=2)
+    dut._log.info(f"Reading from address {address:#04x} in quad mode")
+    read_data = await ospi.read(address, length, mode=2)
+    dut._log.info(f"Read data {read_data} in quad mode")
+    assert read_data == [0xA7], f"Fast read data {read_data} does not match written data [0xA7] in quad mode"
+    
+    # Octal mode test
+    dut._log.info(f"Writing to address {address:#04x} data: [0xA8] in octal mode")
+    await ospi.write(address, [0xA8], mode=3)
+    dut._log.info(f"Reading from address {address:#04x} in octal mode")
+    read_data = await ospi.read(address, length, mode=3)
+    dut._log.info(f"Read data {read_data} in octal mode")
+    assert read_data == [0xA8], f"Fast read data {read_data} does not match written data [0xA8] in octal mode"
+
+@cocotb.test()
+async def test_ospi_flash_io_operations(dut):
+    """Test to validate read and write operations in different modes."""
+    dut._log.info("Starting test_ospi_flash_io_operations")
+    c = Clock(dut.OSPI_CLK, 10, 'ns')
+    await cocotb.start(c.start())
+    
+    clk = dut.OSPI_CLK
+    await RisingEdge(dut.OSPI_CLK)
     cs = dut.OSPI_CS
     io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
     
     ospi = OspiFlash(dut, clk, cs, io)
     await ospi.initialize()
 
-    # Write data to flash
-    address = 0x0001
-    write_data = [0xA5]
-    cocotb.log.info(f"Writing data {write_data} to address {address}")
-    await ospi.write(dut, address, write_data)
+    address = 0x02
+    length = 1
 
-    # Read data from flash
-    read_data = await ospi.read(dut, address, len(write_data))
-    cocotb.log.info(f"Read data {read_data} from address {address}")
+    # Single mode test
+    dut._log.info(f"Writing to address {address:#04x} data: [0xB5] in single mode")
+    await ospi.write(address, [0xB5], mode=0)
+    dut._log.info(f"Reading from address {address:#04x} in single mode")
+    read_data = await ospi.read(address, length, mode=0)
+    dut._log.info(f"Read data {read_data} in single mode")
+    assert read_data == [0xB5], f"Read data {read_data} does not match written data [0xB5] in single mode"
 
-    # Assert that the read data matches the written data
-    assert read_data == write_data, f"Fast read data {read_data} does not match written data {write_data} in single mode"
+    # Dual mode test
+    dut._log.info(f"Writing to address {address:#04x} data: [0xB6] in dual mode")
+    await ospi.write(address, [0xB6], mode=1)
+    dut._log.info(f"Reading from address {address:#04x} in dual mode")
+    read_data = await ospi.read(address, length, mode=1)
+    dut._log.info(f"Read data {read_data} in dual mode")
+    assert read_data == [0xB6], f"Read data {read_data} does not match written data [0xB6] in dual mode"
+
+    # Quad mode test
+    dut._log.info(f"Writing to address {address:#04x} data: [0xB7] in quad mode")
+    await ospi.write(address, [0xB7], mode=2)
+    dut._log.info(f"Reading from address {address:#04x} in quad mode")
+    read_data = await ospi.read(address, length, mode=2)
+    dut._log.info(f"Read data {read_data} in quad mode")
+    assert read_data == [0xB7], f"Read data {read_data} does not match written data [0xB7] in quad mode"
+
+    # Octal mode test
+    dut._log.info(f"Writing to address {address:#04x} data: [0xB8] in octal mode")
+    await ospi.write(address, [0xB8], mode=3)
+    dut._log.info(f"Reading from address {address:#04x} in octal mode")
+    read_data = await ospi.read(address, length, mode=3)
+    dut._log.info(f"Read data {read_data} in octal mode")
+    assert read_data == [0xB8], f"Read data {read_data} does not match written data [0xB8] in octal mode"
+
+@cocotb.test()
+async def test_ospi_flash_hold_operations(dut):
+    """Test to validate hold operations."""
+    dut._log.info("Starting test_ospi_flash_hold_operations")
+    c = Clock(dut.OSPI_CLK, 10, 'ns')
+    await cocotb.start(c.start())
+    
+    clk = dut.OSPI_CLK
+    await RisingEdge(dut.OSPI_CLK)
+    cs = dut.OSPI_CS
+    io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
+    
+    ospi = OspiFlash(dut, clk, cs, io)
+    await ospi.initialize()
+
+    if not hasattr(dut, 'HOLD_N'):
+        dut._log.warning("HOLD_N signal is not defined in the DUT. Skipping hold operations tests.")
+        return
+
+    address = 0x03
+    length = 1
+
+    # Write data and hold operation
+    dut._log.info(f"Writing to address {address:#04x} data: [0xC5] in single mode before hold operation")
+    await ospi.write(address, [0xC5], mode=0)
+    dut._log.info("Triggering hold operation")
+    await ospi.hold_operation()
+    dut._log.info(f"Reading from address {address:#04x} in single mode during hold operation")
+    read_data = await ospi.read(address, length, mode=0)
+    dut._log.info(f"Read data {read_data} during hold operation")
+    assert read_data == [0xC5], f"Read data {read_data} does not match written data [0xC5] after hold operation"
+
+    dut._log.info("Releasing hold operation")
+    await ospi.release_hold()
+    dut._log.info(f"Writing to address {address:#04x} data: [0xC6] in dual mode after releasing hold")
+    await ospi.write(address, [0xC6], mode=1)
+    dut._log.info(f"Reading from address {address:#04x} in dual mode after releasing hold")
+    read_data = await ospi.read(address, length, mode=1)
+    dut._log.info(f"Read data {read_data} after releasing hold")
+    assert read_data == [0xC6], f"Read data {read_data} does not match written data [0xC6] after releasing hold"
