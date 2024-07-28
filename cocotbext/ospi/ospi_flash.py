@@ -35,14 +35,19 @@ class OspiFlash:
         self.data_store[address] = data
 
         # Perform the actual write operation using the OspiBus interface
+        self.dut._log.info("Before OSPI write operation")
         await self.ospi.write(command, address, data, mode)
+        self.dut._log.info("After OSPI write operation")
 
         await Timer(100, units='ns')
 
         # Read back to verify write operation
+        self.dut._log.info("Before OSPI read operation for verification")
         verify_data = await self.ospi.read(command, address, mode, len(data))
+        self.dut._log.info("After OSPI read operation for verification")
         self.dut._log.info(f"Data read back from address {address:#04x}: {verify_data}")
         assert verify_data == data, f"Verification failed: Expected {data}, got {verify_data}"
+
 
     async def read(self, address, length, mode):
         command = {
@@ -85,8 +90,6 @@ class OspiFlash:
             await Timer(10, units='ns')
         else:
             raise AttributeError("HOLD_N signal is not defined in the DUT")
-
-
 
 
 
