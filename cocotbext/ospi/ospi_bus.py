@@ -69,10 +69,13 @@ class OspiBus:
 
     async def receive_byte(self, mode):
         byte = 0
+        lanes = self.get_lanes(mode)
         for bit_position in range(8):
             await RisingEdge(self.clk)
-            bit = self.io[0].value
-            byte = (byte << 1) | bit
+            bit = 0
+            for lane in lanes:
+                bit = (bit << 1) | self.io[lane].value
+            byte = (byte << len(lanes)) | bit
         byte_str = format(byte, '08b')
         self.dut._log.info(f"Received byte {byte_str} in mode {mode}")
         return byte
