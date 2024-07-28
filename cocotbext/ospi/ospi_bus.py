@@ -24,7 +24,7 @@ class OspiBus:
 
     async def read(self, command, address, mode, length):
         self.dut._log.info(f"Read operation: Command: {command}, Address: {address}, Length: {length}, Mode: {mode}")
-        if not isinstance(address, (list, Tuple)):
+        if not isinstance(address, (list, tuple)):
             address = [address]
         await self.send_command(command, mode)
         await self.send_address(address, mode)
@@ -32,6 +32,7 @@ class OspiBus:
         return data
 
     async def send_byte(self, byte, mode):
+        self.dut._log.info(f"Sending byte {byte:08b} on lanes {mode}")
         lanes = self.get_lanes(mode)
         byte_str = format(byte, '08b')
         self.dut._log.info(f"Sending byte {byte_str} on lanes {lanes} in mode {mode}")
@@ -40,7 +41,7 @@ class OspiBus:
             for lane in lanes:
                 self.io[lane].value = bit
             await RisingEdge(self.clk)
-
+        self.dut._log.info(f"Byte {byte:08b} sent")
 
     async def send_address(self, address, mode):
         if isinstance(address, (list, tuple)):
@@ -50,6 +51,7 @@ class OspiBus:
         for i in range(len(address_bits) // 8):
             byte = int(address_bits[i * 8:(i + 1) * 8], 2)
             await self.send_byte(byte, mode)
+        self.dut._log.info(f"Address {address_bits} sent")
 
     async def send_data(self, data, mode):
         self.dut._log.info(f"Sending data {data} in mode {mode}")
@@ -86,6 +88,3 @@ class OspiBus:
             return [0, 1, 2, 3, 4, 5, 6, 7]
         else:
             raise ValueError(f"Unsupported mode: {mode}")
-
-
-
