@@ -31,6 +31,15 @@ class OspiBus:
         data = await self.receive_data(mode, length)
         return data
 
+    async def erase(self, command, address, mode=0):
+        self.dut._log.info(f"Erase operation: Command: {command}, Address: {address}, Mode: {mode}")
+        self.cs.value = 0
+        await self.send_command(command, mode)
+        await self.send_address(address, mode)
+        self.cs.value = 1
+        self.dut._log.info(f"Erase operation completed for address {address:#04x} in mode {mode}")
+
+
     async def send_byte(self, byte, mode):
         self.dut._log.info(f"Sending byte {byte:08b} on lanes {mode}")
         lanes = self.get_lanes(mode)
