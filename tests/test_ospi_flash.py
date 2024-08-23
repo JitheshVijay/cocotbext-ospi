@@ -7,27 +7,34 @@ from cocotb.clock import Clock
 
 @cocotb.test()
 async def print_dut_signals(dut):
-    """Test to print DUT signals."""
-    log = SimLog("cocotb.print_dut_signals")
-    log.info("OSPI_CLK: %s" % dut.OSPI_CLK.value)
+    log = cocotb.logging.getLogger("cocotb.ospi_flash_test")
+    log.info("OSPI_CLK: %s" % dut.clk.value)  # Should be `dut.clk`
     log.info("OSPI_CS: %s" % dut.OSPI_CS.value)
-    for i in range(8):
-        log.info(f"OSPI_IO{i}: %s" % getattr(dut, f"OSPI_IO{i}").value)
+    log.info("OSPI_IO: %s" % dut.OSPI_IO.value)
+    log.info("data_in: %s" % dut.data_in.value)
+    log.info("address: %s" % dut.address.value)
 
 @cocotb.test()
 async def test_ospi_flash_fast_read(dut):
     """Test to validate fast read operations in different modes."""
     dut._log.info("Starting test_ospi_flash_fast_read")
-    c = Clock(dut.OSPI_CLK, 10, 'ns')
-    await cocotb.start(c.start())
     
-    clk = dut.OSPI_CLK
-    await RisingEdge(dut.OSPI_CLK)
+    # Create and start the internal clock
+    clk = Clock(dut.clk, 10, 'ns')
+    cocotb.start_soon(clk.start())
+    
+    # Create and start the OSPI clock
+    ospi_clk = Clock(dut.OSPI_CLK, 20, 'ns')  # Adjust period as needed
+    cocotb.start_soon(ospi_clk.start())
+
+    
     cs = dut.OSPI_CS
-    io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
-    
-    ospi = OspiFlash(dut, clk, cs, io)
+    io = dut.OSPI_IO
+
+    # Initialize the OspiFlash instance
+    ospi = OspiFlash(dut, dut.OSPI_CLK, cs, io)
     await ospi.initialize()
+
     
     address = 0x01
     length = 1
@@ -35,6 +42,7 @@ async def test_ospi_flash_fast_read(dut):
     # Single mode test
     dut._log.info(f"Writing to address {address:#04x} data: [0xA5] in single mode")
     await ospi.write(address, [0xA5], mode=0)
+    
     dut._log.info(f"Reading from address {address:#04x} in single mode")
     read_data = await ospi.read(address, length, mode=0)
     dut._log.info(f"Read data {read_data} in single mode")
@@ -43,6 +51,7 @@ async def test_ospi_flash_fast_read(dut):
     # Dual mode test
     dut._log.info(f"Writing to address {address:#04x} data: [0xA6] in dual mode")
     await ospi.write(address, [0xA6], mode=1)
+    
     dut._log.info(f"Reading from address {address:#04x} in dual mode")
     read_data = await ospi.read(address, length, mode=1)
     dut._log.info(f"Read data {read_data} in dual mode")
@@ -51,6 +60,7 @@ async def test_ospi_flash_fast_read(dut):
     # Quad mode test
     dut._log.info(f"Writing to address {address:#04x} data: [0xA7] in quad mode")
     await ospi.write(address, [0xA7], mode=2)
+    
     dut._log.info(f"Reading from address {address:#04x} in quad mode")
     read_data = await ospi.read(address, length, mode=2)
     dut._log.info(f"Read data {read_data} in quad mode")
@@ -59,6 +69,7 @@ async def test_ospi_flash_fast_read(dut):
     # Octal mode test
     dut._log.info(f"Writing to address {address:#04x} data: [0xA8] in octal mode")
     await ospi.write(address, [0xA8], mode=3)
+    
     dut._log.info(f"Reading from address {address:#04x} in octal mode")
     read_data = await ospi.read(address, length, mode=3)
     dut._log.info(f"Read data {read_data} in octal mode")
@@ -68,16 +79,22 @@ async def test_ospi_flash_fast_read(dut):
 async def test_ospi_flash_io_operations(dut):
     """Test to validate read and write operations in different modes."""
     dut._log.info("Starting test_ospi_flash_io_operations")
-    c = Clock(dut.OSPI_CLK, 10, 'ns')
-    await cocotb.start(c.start())
+    # Create and start the internal clock
+    clk = Clock(dut.clk, 10, 'ns')
+    cocotb.start_soon(clk.start())
     
-    clk = dut.OSPI_CLK
-    await RisingEdge(dut.OSPI_CLK)
+    # Create and start the OSPI clock
+    ospi_clk = Clock(dut.OSPI_CLK, 20, 'ns')  # Adjust period as needed
+    cocotb.start_soon(ospi_clk.start())
+
+    
     cs = dut.OSPI_CS
-    io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
-    
-    ospi = OspiFlash(dut, clk, cs, io)
+    io = dut.OSPI_IO
+
+    # Initialize the OspiFlash instance
+    ospi = OspiFlash(dut, dut.OSPI_CLK, cs, io)
     await ospi.initialize()
+
 
     address = 0x02
     length = 1
@@ -118,16 +135,22 @@ async def test_ospi_flash_io_operations(dut):
 async def test_ospi_flash_hold_operations(dut):
     """Test to validate hold operations."""
     dut._log.info("Starting test_ospi_flash_hold_operations")
-    c = Clock(dut.OSPI_CLK, 10, 'ns')
-    await cocotb.start(c.start())
+    # Create and start the internal clock
+    clk = Clock(dut.clk, 10, 'ns')
+    cocotb.start_soon(clk.start())
     
-    clk = dut.OSPI_CLK
-    await RisingEdge(dut.OSPI_CLK)
+    # Create and start the OSPI clock
+    ospi_clk = Clock(dut.OSPI_CLK, 20, 'ns')  # Adjust period as needed
+    cocotb.start_soon(ospi_clk.start())
+
+    
     cs = dut.OSPI_CS
-    io = [getattr(dut, f"OSPI_IO{i}") for i in range(8)]
-    
-    ospi = OspiFlash(dut, clk, cs, io)
+    io = dut.OSPI_IO
+
+    # Initialize the OspiFlash instance
+    ospi = OspiFlash(dut, dut.OSPI_CLK, cs, io)
     await ospi.initialize()
+
 
     if not hasattr(dut, 'HOLD_N'):
         dut._log.warning("HOLD_N signal is not defined in the DUT. Skipping hold operations tests.")
