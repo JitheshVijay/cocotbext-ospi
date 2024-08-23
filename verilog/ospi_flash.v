@@ -1,23 +1,16 @@
-module ospi_flash #(parameter WIDTH = 8) (
-    input wire OSPI_CLK,                 // OSPI serial clock input
-    inout wire OSPI_IO0,
-    inout wire OSPI_IO1,
-    inout wire OSPI_IO2,
-    inout wire OSPI_IO3,
-    inout wire OSPI_IO4,
-    inout wire OSPI_IO5,
-    inout wire OSPI_IO6,
-    inout wire OSPI_IO7,
-    input wire OSPI_CS,                  // Chip select (active low)
-    input wire clk,                      // Clock input for internal logic
-    input wire reset_n,                  // Active-low reset input
-    input wire write_enable,             // Write enable signal
-    input wire read_enable,              // Read enable signal
-    input wire erase_enable,             // Erase enable signal
-    input wire [7:0] data_in,            // Data input for write operation
-    input wire [7:0] address,            // Address input for memory access
-    output reg [7:0] data_out,           // Data output for read operation
-    input wire HOLD_N                    // Hold signal (active low)
+module ospi_flash(
+    input wire clk,
+    input wire OSPI_CLK,
+    inout wire [7:0] OSPI_IO,
+    input wire OSPI_CS,
+    input wire reset_n,
+    input wire write_enable,
+    input wire read_enable,
+    input wire erase_enable,
+    input wire [31:0] data_in,   // Data input
+    input wire [23:0] address,   // Address input
+    output reg [31:0] data_out,  // Data output
+    input wire HOLD_N
 );
 
     // Memory array to store data, 256 bytes in size
@@ -49,14 +42,10 @@ module ospi_flash #(parameter WIDTH = 8) (
         end
     end
 
-    // Assign OSPI data lines based on operation mode
-    assign OSPI_IO0 = (write_enable && !OSPI_CS && !hold_active) ? data_in[0] : 1'bz;
-    assign OSPI_IO1 = (write_enable && !OSPI_CS && !hold_active) ? data_in[1] : 1'bz;
-    assign OSPI_IO2 = (write_enable && !OSPI_CS && !hold_active) ? data_in[2] : 1'bz;
-    assign OSPI_IO3 = (write_enable && !OSPI_CS && !hold_active) ? data_in[3] : 1'bz;
-    assign OSPI_IO4 = (write_enable && !OSPI_CS && !hold_active) ? data_in[4] : 1'bz;
-    assign OSPI_IO5 = (write_enable && !OSPI_CS && !hold_active) ? data_in[5] : 1'bz;
-    assign OSPI_IO6 = (write_enable && !OSPI_CS && !hold_active) ? data_in[6] : 1'bz;
-    assign OSPI_IO7 = (write_enable && !OSPI_CS && !hold_active) ? data_in[7] : 1'bz;
+
+    // OSPI_IO Assignment (for bidirectional data handling)
+    assign OSPI_IO = (!hold_active && read_enable && !OSPI_CS) ? memory[address] : 8'bz;
 
 endmodule
+
+
