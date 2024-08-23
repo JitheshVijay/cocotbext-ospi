@@ -11,11 +11,12 @@ COCOTB_HDL_TIMEPRECISION = 1ps
 
 # Name of the top-level module and the test module
 DUT      = ospi_flash
-TOPLEVEL = $(DUT)
+TOPLEVEL = ospi_flash_test
 MODULE   = test_ospi_flash
 
 # Verilog source files
-VERILOG_SOURCES = $(shell pwd)/../verilog/ospi_flash.v $(shell pwd)/../verilog/ospi_flash_test.v
+VERILOG_SOURCES = $(shell pwd)/../verilog/ospi_flash.v 
+VERILOG_SOURCES += $(shell pwd)/../verilog/ospi_flash_test.v
 
 # Enable waveform dumping
 ifeq ($(SIM), icarus)
@@ -37,22 +38,16 @@ include $(shell cocotb-config --makefiles)/Makefile.sim
 
 # Generate the iverilog dump file for waveform output
 iverilog_dump.v:
-	echo 'module iverilog_dump();' > $@
-	echo 'initial begin' >> $@
-	echo '    $$dumpfile("$(TOPLEVEL).fst");' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL));' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_CLK);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_CS);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO0);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO1);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO2);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO3);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO4);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO5);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO6);' >> $@
-	echo '    $$dumpvars(0, $(TOPLEVEL).OSPI_IO7);' >> $@
-	echo 'end' >> $@
-	echo 'endmodule' >> $@
+	echo 'module iverilog_dump();' > iverilog_dump.v
+	echo 'initial begin' >> iverilog_dump.v
+	echo '    $$dumpfile("sim_build/ospi_flash_test.fst");' >> iverilog_dump.v
+	echo '    $$dumpvars(0, ospi_flash_test.clk);' >> iverilog_dump.v
+	echo '    $$dumpvars(0, ospi_flash_test.OSPI_CS);' >> iverilog_dump.v
+	echo '    $$dumpvars(0, ospi_flash_test.OSPI_IO);' >> iverilog_dump.v 
+	echo '    $$dumpvars(0, ospi_flash_test.data_in);' >> iverilog_dump.v
+	echo '    $$dumpvars(0, ospi_flash_test.address);' >> iverilog_dump.v
+	echo 'end' >> iverilog_dump.v
+	echo 'endmodule' >> iverilog_dump.v
 
 # Clean target to remove generated files
 clean::
