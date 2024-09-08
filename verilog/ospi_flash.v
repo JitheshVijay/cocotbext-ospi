@@ -7,11 +7,11 @@ module ospi_flash(
     input wire write_enable,
     input wire read_enable,
     input wire erase_enable,
-    input wire [31:0] data_in,   // Data input
-    input wire [23:0] address,   // Address input
-    output reg [31:0] data_out,  // Data output
+    input wire [7:0] data_in,   
+    input wire [23:0] address,
+    output reg [7:0] data_out,  
     input wire HOLD_N
-);
+
 
     // Memory array to store data, 256 bytes in size
     reg [7:0] memory [0:255];
