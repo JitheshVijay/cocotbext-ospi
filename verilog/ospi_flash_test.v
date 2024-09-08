@@ -21,11 +21,12 @@ module ospi_flash_test;
   reg read_enable;
   reg erase_enable;
   wire [7:0] OSPI_IO;
-  reg [31:0] data_in;
+  reg [7:0] data_in;
   reg [23:0] address;
-  wire [31:0] data_out;
+  wire [7:0] data_out;
   wire clk; 
   reg HOLD_N;
+
   
   // Instantiate clock generator
   clock_generator clk_inst (
@@ -34,20 +35,20 @@ module ospi_flash_test;
   );
 
   // Instantiate the ospi_flash module
-  ospi_flash #(.WIDTH(WIDTH)) dut (
-    .OSPI_CLK(clk),
-    .OSPI_IO(OSPI_IO),
-    .OSPI_CS(OSPI_CS),
-    .clk(clk),
-    .reset_n(reset_n),
-    .write_enable(write_enable),
-    .read_enable(read_enable),
-    .erase_enable(erase_enable),
-    .data_in(data_in),
-    .address(address),
-    .data_out(data_out),
-    .HOLD_N(HOLD_N) 
-  );
+    ospi_flash dut (
+        .clk(clk),
+        .OSPI_CLK(OSPI_CLK),
+        .OSPI_IO(OSPI_IO),
+        .OSPI_CS(OSPI_CS),
+        .reset_n(reset_n),
+        .write_enable(write_enable),
+        .read_enable(read_enable),
+        .erase_enable(erase_enable),
+        .data_in(data_in[7:0]),  
+        .address(address),
+        .data_out(data_out[7:0]),  
+        .HOLD_N(HOLD_N) 
+    );
 
   initial begin
     // Initialize signals
