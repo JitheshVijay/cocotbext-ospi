@@ -11,7 +11,7 @@ module ospi_flash(
     input wire [23:0] address,
     output reg [7:0] data_out,  
     input wire HOLD_N
-
+);
 
     // Memory array to store data, 256 bytes in size
     reg [7:0] memory [0:255];
@@ -47,5 +47,4 @@ module ospi_flash(
     assign OSPI_IO = (!hold_active && read_enable && !OSPI_CS) ? memory[address] : 8'bz;
 
 endmodule
-
 
