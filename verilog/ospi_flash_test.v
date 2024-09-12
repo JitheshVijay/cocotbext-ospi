@@ -35,17 +35,18 @@ module ospi_flash_test;
 
   // Instantiate the ospi_flash module
   ospi_flash dut (
-      .clk(clk),
-      .OSPI_CLK(OSPI_CLK),
-      .OSPI_IO(OSPI_IO),
-      .OSPI_CS(OSPI_CS),
-      .reset_n(reset_n),
-      .write_enable(write_enable),
-      .read_enable(read_enable),
-      .erase_enable(erase_enable),
-      .data_in(data_in[7:0]),  
-      .address(address),
-      .data_out(data_out[7:0]),  
+    .clk(clk),
+    .OSPI_CLK(OSPI_CLK),
+    .OSPI_IO(OSPI_IO),
+    .OSPI_CS(OSPI_CS),
+    .reset_n(reset_n),
+    .write_enable(write_enable),
+    .read_enable(read_enable),
+    .erase_enable(erase_enable),
+    .data_in(data_in[7:0]),  
+    .address(address),
+    .data_out(data_out[7:0]),  
+    .HOLD_N(HOLD_N) 
   );
 
   initial begin
@@ -70,3 +71,4 @@ module ospi_flash_test;
   end
 
 endmodule
+
