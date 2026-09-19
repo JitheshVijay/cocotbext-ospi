@@ -40,3 +40,6 @@ jobs:
       # Real device models, built from datasheets.
       - name: Macronix MX25UM51345G
         run: make -C tests -f Makefile.mx25
+
+      - name: Micron MT35XU512ABA
+        run: make -C tests -f Makefile.mt35

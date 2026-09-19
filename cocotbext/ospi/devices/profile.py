@@ -71,6 +71,19 @@ class DeviceProfile:
     #: Dummy cycles the part uses for array reads once in octal.
     array_dummy: int = 20
 
+    @property
+    def default_octal(self) -> str:
+        """The octal protocol this part actually uses.
+
+        Macronix supports both STR and DTR octal; Micron's driver path is
+        DTR only. Callers that just want "octal" should get whichever this
+        part is built around rather than a hardcoded guess.
+        """
+        for proto in (PROTO_8D_8D_8D, PROTO_8S_8S_8S):
+            if proto in self.supported:
+                return proto
+        raise ValueError(f"{self.name} profile models no octal protocol")
+
     def extension(self, opcode: int) -> int:
         """The second command byte sent in octal mode."""
         if self.cmd_ext == EXT_INVERT:

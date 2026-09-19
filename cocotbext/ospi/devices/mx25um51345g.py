@@ -56,7 +56,7 @@ MX25UM51345G = DeviceProfile(
     name="MX25UM51345G",
     jedec_id=[0xC2, 0x80, 0x3A],
     cmd_ext=EXT_INVERT,
-    supported=[PROTO_1S_1S_1S, PROTO_8S_8S_8S],
+    supported=[PROTO_1S_1S_1S, PROTO_8S_8S_8S],   # DOPI not modelled yet
     array_dummy=20,
     ops={
         # Register access. Note how RDSR and RDID gain an address phase and

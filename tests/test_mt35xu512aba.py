@@ -1,0 +1,180 @@
+"""Micron MT35XU512ABA in 8D-8D-8D.
+
+These cover what makes this part different from the Macronix one: the
+repeated (not inverted) command extension, CFR0V/CFR1V rather than CR2, and
+double transfer rate.
+"""
+
+import cocotb
+from cocotb.clock import Clock
+
+from cocotbext.ospi.devices import (
+    MT35XU512ABA, MX25UM51345G,
+    CFR0V, CFR1V, CFR0V_OCTAL_DTR, CFR0V_EXT_SPI, OCTAL_DTR_DUMMY,
+    PROTO_1S_1S_1S, PROTO_8D_8D_8D,
+)
+from cocotbext.ospi.xspi_flash import XspiFlash, STATUS_WEL, STATUS_WIP
+
+
+async def setup(dut):
+    cocotb.start_soon(Clock(dut.clk, 20, unit="ns").start())
+    flash = XspiFlash(dut, MT35XU512ABA)
+    await flash.initialize()
+    return flash
+
+
+@cocotb.test()
+async def test_boots_in_extended_spi(dut):
+    """The part comes up single-lane and identifies itself there."""
+    flash = await setup(dut)
+    assert flash.protocol == PROTO_1S_1S_1S
+    assert await flash.read_id() == [0x2C, 0x5B, 0x1A]
+
+
+@cocotb.test()
+async def test_cfr0v_defaults_to_extended_spi(dut):
+    """CFR0V reads 0xFF out of reset."""
+    flash = await setup(dut)
+    assert await flash.read_register(CFR0V) == CFR0V_EXT_SPI
+
+
+@cocotb.test()
+async def test_enter_octal_dtr_and_identify(dut):
+    """Writing CFR1V then CFR0V switches to 8D-8D-8D; the ID still reads.
+
+    This exercises the whole DTR path at once: a two-byte command with a
+    repeated extension, a 4-byte address, 8 dummy cycles, and data clocked
+    on both edges.
+    """
+    flash = await setup(dut)
+    await flash.enter_octal(PROTO_8D_8D_8D)
+    assert flash.protocol == PROTO_8D_8D_8D
+    assert flash.dtr
+    assert await flash.read_id() == [0x2C, 0x5B, 0x1A]
+
+
+@cocotb.test()
+async def test_dummy_cycles_were_programmed_first(dut):
+    """CFR1V holds the array-read dummy count the driver then relies on."""
+    flash = await setup(dut)
+    await flash.enter_octal()
+    assert await flash.read_register(CFR1V) == OCTAL_DTR_DUMMY
+    assert await flash.read_register(CFR0V) == CFR0V_OCTAL_DTR
+
+
+@cocotb.test()
+async def test_extension_is_repeat_not_invert(dut):
+    """Micron repeats the opcode; the Macronix complement is rejected.
+
+    The two profiles disagree here on purpose -- it is the most likely thing
+    to be wrong in a controller ported between the vendors.
+    """
+    flash = await setup(dut)
+    await flash.enter_octal()
+
+    wren = MT35XU512ABA.ops["WREN"]
+    assert MT35XU512ABA.extension(wren.opcode) == wren.opcode
+    assert MX25UM51345G.extension(wren.opcode) == (~wren.opcode) & 0xFF
+
+    # Send WREN with the *inverted* extension a Macronix part would want.
+    await flash.master.start()
+    await flash.master.send_byte_dtr(wren.opcode, lanes=8)
+    await flash.master.send_byte_dtr((~wren.opcode) & 0xFF, lanes=8)
+    await flash.master.stop()
+
+    assert not await flash.read_status() & STATUS_WEL, \
+        "WREN honoured despite a Macronix-style inverted extension"
+
+    # The repeated extension works.
+    await flash.write_enable()
+    assert await flash.read_status() & STATUS_WEL
+
+
+@cocotb.test()
+async def test_program_and_read_in_octal_dtr(dut):
+    """Program and read back over the DTR octal bus."""
+    flash = await setup(dut)
+    await flash.enter_octal()
+
+    await flash.program(0x00000010, [0xA5, 0x5A, 0x81, 0x18])
+    assert await flash.read(0x00000010, 4) == [0xA5, 0x5A, 0x81, 0x18]
+
+
+@cocotb.test()
+async def test_program_requires_write_enable(dut):
+    """Page program with no WEL is ignored."""
+    flash = await setup(dut)
+    await flash.enter_octal()
+
+    await flash._transfer("PP", address=0x00000020, write=[0x11, 0x22])
+    assert await flash.read(0x00000020, 2) == [0xFF, 0xFF]
+
+
+@cocotb.test()
+async def test_program_clears_bits_only(dut):
+    """NOR programming can clear bits but never set them."""
+    flash = await setup(dut)
+    await flash.enter_octal()
+
+    await flash.program(0x00000030, [0xF0, 0xFF])
+    assert await flash.read(0x00000030, 2) == [0xF0, 0xFF]
+
+    await flash.program(0x00000030, [0x0F, 0x0F])
+    assert await flash.read(0x00000030, 2) == [0x00, 0x0F]
+
+    await flash.erase_sector(0x00000030)
+    assert await flash.read(0x00000030, 2) == [0xFF, 0xFF]
+
+
+@cocotb.test()
+async def test_wip_is_set_during_program(dut):
+    """The part reports busy, and the program consumes WEL."""
+    flash = await setup(dut)
+    await flash.enter_octal()
+
+    await flash.write_enable()
+    await flash._transfer("PP", address=0x00000040, write=[0x5A, 0xA5])
+
+    assert await flash.read_status() & STATUS_WIP
+    await flash.wait_ready()
+
+    status = await flash.read_status()
+    assert not status & STATUS_WIP
+    assert not status & STATUS_WEL
+    assert await flash.read(0x00000040, 2) == [0x5A, 0xA5]
+
+
+@cocotb.test()
+async def test_leaving_octal_writes_two_registers_at_once(dut):
+    """8D-8D-8D cannot move an odd number of bytes.
+
+    Eight lanes on both edges carry two bytes per clock, so returning to
+    extended SPI writes CFR0V and CFR1V together -- which is exactly what
+    Linux does, and for this reason.
+    """
+    flash = await setup(dut)
+    await flash.enter_octal()
+    assert await flash.read_id() == [0x2C, 0x5B, 0x1A]
+
+    await flash.exit_octal()
+    assert flash.protocol == PROTO_1S_1S_1S
+    assert not flash.dtr
+    assert await flash.read_id() == [0x2C, 0x5B, 0x1A]
+    assert await flash.read_register(CFR0V) == CFR0V_EXT_SPI
+
+
+@cocotb.test()
+async def test_sector_erase_spans_the_sector(dut):
+    """Erase clears its whole 4 KB sector and leaves the next alone."""
+    flash = await setup(dut)
+    await flash.enter_octal()
+
+    await flash.program(0x00000000, [0x11, 0x11])
+    await flash.program(0x00000FFE, [0x22, 0x22])
+    await flash.program(0x00001000, [0x33, 0x33])
+
+    await flash.erase_sector(0x00000000)
+
+    assert await flash.read(0x00000000, 2) == [0xFF, 0xFF]
+    assert await flash.read(0x00000FFE, 2) == [0xFF, 0xFF]
+    assert await flash.read(0x00001000, 2) == [0x33, 0x33]

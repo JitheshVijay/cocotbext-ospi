@@ -125,14 +125,23 @@ module mx25um51345g #(
     end
 
     // The device answers on io1 in SPI and across all eight lanes in octal.
-    assign io[0] = (driving && lanes == 8) ? dout[0] : 1'bz;
-    assign io[1] = driving                 ? dout[1] : 1'bz;
-    assign io[2] = (driving && lanes == 8) ? dout[2] : 1'bz;
-    assign io[3] = (driving && lanes == 8) ? dout[3] : 1'bz;
-    assign io[4] = (driving && lanes == 8) ? dout[4] : 1'bz;
-    assign io[5] = (driving && lanes == 8) ? dout[5] : 1'bz;
-    assign io[6] = (driving && lanes == 8) ? dout[6] : 1'bz;
-    assign io[7] = (driving && lanes == 8) ? dout[7] : 1'bz;
+    // Drive through a 1 ns delay. The master samples on clock edges and the
+    // device updates on those same edges, so driving the live value races
+    // it -- the master could see this edge's byte or the last one. Every
+    // DDR-capable flash model does this.
+    wire [7:0] dout_d;
+    assign #1 dout_d = dout;
+    wire driving_d;
+    assign #1 driving_d = driving;
+
+    assign io[0] = (driving_d && lanes == 8) ? dout_d[0] : 1'bz;
+    assign io[1] = driving_d                 ? dout_d[1] : 1'bz;
+    assign io[2] = (driving_d && lanes == 8) ? dout_d[2] : 1'bz;
+    assign io[3] = (driving_d && lanes == 8) ? dout_d[3] : 1'bz;
+    assign io[4] = (driving_d && lanes == 8) ? dout_d[4] : 1'bz;
+    assign io[5] = (driving_d && lanes == 8) ? dout_d[5] : 1'bz;
+    assign io[6] = (driving_d && lanes == 8) ? dout_d[6] : 1'bz;
+    assign io[7] = (driving_d && lanes == 8) ? dout_d[7] : 1'bz;
 
     wire [7:0] status = {6'b0, wel, wip};
 

@@ -108,6 +108,72 @@ what a real controller must do.
 `HOLD_N` is **active low**: high is normal operation, and pulling it low
 freezes the interface mid-transaction without losing state.
 
+## Real device models
+
+Alongside the generic model there are models of specific parts, built from
+their datasheets and cross-checked against Linux's `drivers/mtd/spi-nor`:
+
+| Part | Protocols | Command extension | Octal entry |
+|---|---|---|---|
+| **Macronix MX25UM51345G** | 1S-1S-1S, 8S-8S-8S | **inverted** (`~opcode`) | CR2 `0x00000000` |
+| **Micron MT35XU512ABA** | 1S-1S-1S, 8D-8D-8D | **repeated** (`opcode`) | CFR1V then CFR0V |
+
+```python
+from cocotbext.ospi.devices import MX25UM51345G
+from cocotbext.ospi.xspi_flash import XspiFlash
+
+flash = XspiFlash(dut, MX25UM51345G)
+await flash.initialize()                       # the part boots single-lane
+assert await flash.read_id() == [0xC2, 0x80, 0x3A]
+
+await flash.enter_octal()                      # writes CR2, switches protocol
+assert await flash.read_id() == [0xC2, 0x80, 0x3A]   # now over eight lanes
+```
+
+### Three things real parts do that a generic octal model does not
+
+**The opcode is single-lane even in octal, and it comes in pairs.** Octal
+commands are two bytes: the opcode and an extension. Macronix sends the
+bitwise complement (`8READ` is `EC`/`13`), Micron repeats the opcode. Linux
+calls these `SPI_NOR_EXT_INVERT` and `SPI_NOR_EXT_REPEAT`. Send the wrong
+one and the part ignores the command — the two models disagree about this
+deliberately, and each has a test proving it rejects the other's form.
+
+**Commands change shape with the protocol.** `RDSR` takes no address and no
+dummy cycles in SPI, but on the Macronix part in OPI it grows a 4-byte
+address and four dummy cycles. `RDID` likewise. Addresses are 4 bytes, not
+3.
+
+**Dummy cycles are configurable and you must track them.** `DC[2:0]` in
+Macronix CR2 `0x300` selects 20/18/16/14/12/10/8/6 cycles depending on clock
+frequency; Micron's CFR1V holds the count directly. A controller that does
+not follow the register reads garbage — there is a test that walks the whole
+table.
+
+### 8D-8D-8D
+
+The Micron model runs at double transfer rate: a bit per lane on **both**
+clock edges, so eight lanes move two bytes per clock. That is why an odd
+number of bytes cannot be transferred in that mode, and why leaving it means
+writing CFR0V and CFR1V together in one 2-byte write — which is exactly what
+Linux does.
+
+The DTR edge handling is validated against PicoSoC's `spiflash.v` quad-DTR
+read (`0xED`), an independently written model, for the same reason the rest
+of the interop suite exists.
+
+### What is not modelled
+
+DQS, SFDP, the flag status register, security and lock registers,
+suspend/resume, and Macronix's DOPI (8D-8D-8D) mode. The arrays are a small
+window rather than the full 64 MB so simulations stay fast; capacity is
+reported honestly in the JEDEC ID.
+
+```
+make -C tests -f Makefile.mx25    # Macronix, 12 tests
+make -C tests -f Makefile.mt35    # Micron, 11 tests
+```
+
 ## Bus signals
 
 `OspiBus.from_entity(dut)` picks up `clk`, `csb`, `io` and `HOLD_N`, plus

@@ -56,6 +56,12 @@ class XspiFlash:
                 f"{self.profile.name} has no {name} operation in this profile"
             ) from None
 
+    async def _send_byte(self, byte):
+        if self.dtr:
+            await self.master.send_byte_dtr(byte, lanes=self.lanes)
+        else:
+            await self.master.send_byte(byte, lanes=self.lanes)
+
     async def _send_command(self, op):
         """Send the opcode, plus its extension when in octal.
 
@@ -63,11 +69,9 @@ class XspiFlash:
         complement, Micron repeats the opcode. A part that gets the wrong
         extension ignores the command entirely.
         """
-        await self.master.send_byte(op.opcode, lanes=self.lanes)
+        await self._send_byte(op.opcode)
         if self.octal:
-            await self.master.send_byte(
-                self.profile.extension(op.opcode), lanes=self.lanes
-            )
+            await self._send_byte(self.profile.extension(op.opcode))
 
     async def _transfer(self, name, address=None, write=None, read=0):
         """One chip-select framed command, shaped by the profile."""
@@ -78,19 +82,30 @@ class XspiFlash:
         await self._send_command(op)
 
         if addr_bytes:
-            await self.master.send_address(
-                address or 0, lanes=self.lanes, width=addr_bytes * 8
-            )
+            if self.dtr:
+                await self.master.send_address_dtr(
+                    address or 0, lanes=self.lanes, width=addr_bytes * 8
+                )
+            else:
+                await self.master.send_address(
+                    address or 0, lanes=self.lanes, width=addr_bytes * 8
+                )
 
         if dummy:
-            await self.master.dummy_cycles(dummy)
+            if self.dtr:
+                await self.master.dummy_edges(dummy)
+            else:
+                await self.master.dummy_cycles(dummy)
 
         data = None
         if write is not None:
             for byte in write:
-                await self.master.send_byte(byte & 0xFF, lanes=self.lanes)
+                await self._send_byte(byte & 0xFF)
         elif read:
-            data = await self.master.recv_bytes(read, lanes=self.lanes)
+            if self.dtr:
+                data = await self.master.recv_bytes_dtr(read, lanes=self.lanes)
+            else:
+                data = await self.master.recv_bytes(read, lanes=self.lanes)
 
         await self.master.stop()
         return data
@@ -114,8 +129,14 @@ class XspiFlash:
         self.bus.cs.value = 1
         await RisingEdge(self.bus.clk)
 
-    async def enter_octal(self, protocol=PROTO_8S_8S_8S):
-        """Switch the part into octal using its own documented sequence."""
+    async def enter_octal(self, protocol=None):
+        """Switch the part into octal using its own documented sequence.
+
+        Defaults to whichever octal protocol the part is built around --
+        DTR for Micron, STR for the Macronix profile here.
+        """
+        if protocol is None:
+            protocol = self.profile.default_octal
         if protocol not in self.profile.supported:
             raise ValueError(
                 f"{self.profile.name} profile does not model {protocol}; "
@@ -148,8 +169,16 @@ class XspiFlash:
         """Read one of the address-mapped configuration registers."""
         return (await self._transfer("RDCR2", address=cr2_address, read=1))[0]
 
-    async def write_register(self, cr2_address: int, value: int):
-        await self._transfer("WRCR2", address=cr2_address, write=[value])
+    async def write_register(self, cr2_address: int, value):
+        """Write a configuration register.
+
+        ``value`` may be a list: 8D-8D-8D cannot transfer an odd number of
+        bytes, so leaving octal means writing two consecutive registers in
+        one go.
+        """
+        if isinstance(value, int):
+            value = [value]
+        await self._transfer("WRCR2", address=cr2_address, write=value)
 
     async def is_busy(self) -> bool:
         return bool(await self.read_status() & STATUS_WIP)

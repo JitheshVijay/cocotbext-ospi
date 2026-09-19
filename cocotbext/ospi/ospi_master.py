@@ -15,7 +15,7 @@ opcode on a single lane and only widens for the address, mode byte and data,
 so every method takes its own ``lanes``.
 """
 
-from cocotb.triggers import FallingEdge, RisingEdge
+from cocotb.triggers import Edge, FallingEdge, RisingEdge
 
 VALID_LANES = (1, 2, 4, 8)
 
@@ -123,3 +123,65 @@ class OspiMaster:
 
     async def recv_bytes(self, count: int, lanes: int = 1) -> list:
         return [await self.recv_byte(lanes) for _ in range(count)]
+
+    # ── double transfer rate (DTR / DDR) ─────────────────────────────
+    #
+    # In DTR a lane carries a bit on *both* clock edges, so an 8-lane bus
+    # moves two bytes per clock and a 4-lane bus moves one. Data is set up
+    # before an edge and captured on it; the device presents its own data
+    # just after an edge, so the master samples on the following one.
+    #
+    # This is why an odd number of bytes cannot be transferred in 8D-8D-8D:
+    # each clock carries two, and there is no half clock.
+
+    async def send_byte_dtr(self, byte: int, lanes: int = 8):
+        """Send one byte, ``lanes`` bits per clock edge."""
+        self._check(lanes)
+        mask = (1 << lanes) - 1
+        for shift in range(8 - lanes, -1, -lanes):
+            self.bus.io_out.value = (byte >> shift) & mask
+            self.bus.io_oe.value = mask
+            await Edge(self.bus.clk)
+
+    async def send_address_dtr(self, address: int, lanes: int = 8,
+                               width: int = 32):
+        for shift in range(width - 8, -1, -8):
+            await self.send_byte_dtr((address >> shift) & 0xFF, lanes)
+
+    async def dummy_edges(self, count: int):
+        """Clock ``count`` dummy *cycles* with the bus released.
+
+        Counted in clocks, not edges, to match how datasheets quote them.
+        """
+        self.release()
+        for _ in range(count):
+            await RisingEdge(self.bus.clk)
+
+    async def recv_byte_dtr(self, lanes: int = 8) -> int:
+        """Read one byte the device is driving, ``lanes`` bits per edge."""
+        self._check(lanes)
+        self.release()
+        byte = 0
+        for _ in range(8 // lanes):
+            await Edge(self.bus.clk)
+            chunk = 0
+            for lane in range(lanes - 1, -1, -1):
+                chunk = (chunk << 1) | self._lane_bit(lane)
+            byte = (byte << lanes) | chunk
+        return byte
+
+    async def recv_bytes_dtr(self, count: int, lanes: int = 8,
+                             turnaround: int = 0) -> list:
+        """Read ``count`` bytes in DTR.
+
+        ``turnaround`` is how many edges to let pass before the first sample.
+        The device presents its first data *after* the edge that ends the
+        dummy phase, so sampling on that same edge catches the bus still
+        released. Models that drive edge-aligned need one edge of turnaround;
+        models that present data as soon as the read phase begins need none,
+        so this is per-device rather than a constant.
+        """
+        self.release()
+        for _ in range(turnaround):
+            await Edge(self.bus.clk)
+        return [await self.recv_byte_dtr(lanes) for _ in range(count)]

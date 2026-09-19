@@ -22,6 +22,7 @@ CMD_RELEASE_POWER_DOWN = 0xAB
 CMD_READ = 0x03
 CMD_DIOR = 0xBB
 CMD_QIOR = 0xEB
+CMD_QIOR_DTR = 0xED   # fast read quad I/O, double transfer rate
 
 # spiflash.v uses `localparam integer latency = 8`.
 DUMMY_CYCLES = 8
@@ -106,3 +107,28 @@ async def test_all_widths_agree(dut):
     dual = await read_wide(master, CMD_DIOR, 2, address, 4)
     quad = await read_wide(master, CMD_QIOR, 4, address, 4)
     assert single == dual == quad == EXPECTED[0x20:0x24]
+
+
+@cocotb.test()
+async def test_quad_io_dtr_read(dut):
+    """0xED: quad I/O at double transfer rate.
+
+    DTR moves a bit per lane on *both* clock edges, so four lanes carry a
+    whole byte per clock. Validating the edge handling here matters: this is
+    an independently written model, and getting DTR half a phase out is the
+    kind of mistake a closed loop cannot catch.
+    """
+    master = await setup(dut)
+
+    await master.start()
+    # The opcode still goes out single-lane at single rate.
+    await master.send_byte(CMD_QIOR_DTR, lanes=1)
+    # Address and mode byte are quad DTR: one byte per clock.
+    await master.send_address_dtr(0x000000, lanes=4, width=24)
+    await master.send_byte_dtr(0x00, lanes=4)
+    await master.dummy_edges(DUMMY_CYCLES)
+    # spiflash.v drives edge-aligned in DDR, so let one edge pass first.
+    got = await master.recv_bytes_dtr(8, lanes=4, turnaround=1)
+    await master.stop()
+
+    assert got == EXPECTED[:8], f"got {[hex(b) for b in got]}"
