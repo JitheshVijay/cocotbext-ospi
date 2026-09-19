@@ -38,16 +38,12 @@ include $(shell cocotb-config --makefiles)/Makefile.sim
 
 # Generate the iverilog dump file for waveform output
 iverilog_dump.v:
-	echo 'module iverilog_dump();' > iverilog_dump.v
-	echo 'initial begin' >> iverilog_dump.v
-	echo '    $$dumpfile("sim_build/ospi_flash_test.fst");' >> iverilog_dump.v
-	echo '    $$dumpvars(0, ospi_flash_test.clk);' >> iverilog_dump.v
-	echo '    $$dumpvars(0, ospi_flash_test.OSPI_CS);' >> iverilog_dump.v
-	echo '    $$dumpvars(0, ospi_flash_test.OSPI_IO);' >> iverilog_dump.v 
-	echo '    $$dumpvars(0, ospi_flash_test.data_in);' >> iverilog_dump.v
-	echo '    $$dumpvars(0, ospi_flash_test.address);' >> iverilog_dump.v
-	echo 'end' >> iverilog_dump.v
-	echo 'endmodule' >> iverilog_dump.v
+	echo 'module iverilog_dump();' > $@
+	echo 'initial begin' >> $@
+	echo '    $$dumpfile("sim_build/$(TOPLEVEL).fst");' >> $@
+	echo '    $$dumpvars(0, $(TOPLEVEL));' >> $@
+	echo 'end' >> $@
+	echo 'endmodule' >> $@
 
 # Clean target to remove generated files
 clean::

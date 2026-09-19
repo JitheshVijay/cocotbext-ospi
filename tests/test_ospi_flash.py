@@ -1,179 +1,106 @@
+"""Functional tests for the OSPI flash model and the cocotbext-ospi driver."""
+
 import cocotb
-from cocotb.triggers import Timer, RisingEdge
-from cocotb.result import TestFailure
-from cocotb.log import SimLog
-from cocotbext.ospi.ospi_flash import OspiFlash
 from cocotb.clock import Clock
 
-@cocotb.test()
-async def print_dut_signals(dut):
-    log = cocotb.logging.getLogger("cocotb.ospi_flash_test")
-    log.info("OSPI_CLK: %s" % dut.clk.value)  # Should be `dut.clk`
-    log.info("OSPI_CS: %s" % dut.OSPI_CS.value)
-    log.info("OSPI_IO: %s" % dut.OSPI_IO.value)
-    log.info("data_in: %s" % dut.data_in.value)
-    log.info("address: %s" % dut.address.value)
+from cocotbext.ospi import OspiFlash
 
-@cocotb.test()
-async def test_ospi_flash_fast_read(dut):
-    """Test to validate fast read operations in different modes."""
-    dut._log.info("Starting test_ospi_flash_fast_read")
-    
-    # Create and start the internal clock
-    clk = Clock(dut.clk, 10, 'ns')
-    cocotb.start_soon(clk.start())
-    
-    # Create and start the OSPI clock
-    ospi_clk = Clock(dut.OSPI_CLK, 20, 'ns')  # Adjust period as needed
-    cocotb.start_soon(ospi_clk.start())
+# 0 single, 1 dual, 2 quad, 3 octal
+ALL_MODES = [0, 1, 2, 3]
+MODE_NAMES = {0: "single", 1: "dual", 2: "quad", 3: "octal"}
 
-    
-    cs = dut.OSPI_CS
-    io = dut.OSPI_IO
 
-    # Initialize the OspiFlash instance
-    ospi = OspiFlash(dut, dut.OSPI_CLK, cs, io)
-    await ospi.initialize()
+async def setup(dut):
+    """Start the OSPI clock and reset the flash."""
+    cocotb.start_soon(Clock(dut.OSPI_CLK, 20, units="ns").start())
+    flash = OspiFlash(dut)
+    await flash.initialize()
+    return flash
 
-    
-    address = 0x01
-    length = 1
-
-    # Single mode test
-    dut._log.info(f"Writing to address {address:#04x} data: [0xA5] in single mode")
-    await ospi.write(address, [0xA5], mode=0)
-    
-    dut._log.info(f"Reading from address {address:#04x} in single mode")
-    read_data = await ospi.read(address, length, mode=0)
-    dut._log.info(f"Read data {read_data} in single mode")
-    assert read_data == [0xA5], f"Fast read data {read_data} does not match written data [0xA5] in single mode"
-    
-    # Dual mode test
-    dut._log.info(f"Writing to address {address:#04x} data: [0xA6] in dual mode")
-    await ospi.write(address, [0xA6], mode=1)
-    
-    dut._log.info(f"Reading from address {address:#04x} in dual mode")
-    read_data = await ospi.read(address, length, mode=1)
-    dut._log.info(f"Read data {read_data} in dual mode")
-    assert read_data == [0xA6], f"Fast read data {read_data} does not match written data [0xA6] in dual mode"
-    
-    # Quad mode test
-    dut._log.info(f"Writing to address {address:#04x} data: [0xA7] in quad mode")
-    await ospi.write(address, [0xA7], mode=2)
-    
-    dut._log.info(f"Reading from address {address:#04x} in quad mode")
-    read_data = await ospi.read(address, length, mode=2)
-    dut._log.info(f"Read data {read_data} in quad mode")
-    assert read_data == [0xA7], f"Fast read data {read_data} does not match written data [0xA7] in quad mode"
-    
-    # Octal mode test
-    dut._log.info(f"Writing to address {address:#04x} data: [0xA8] in octal mode")
-    await ospi.write(address, [0xA8], mode=3)
-    
-    dut._log.info(f"Reading from address {address:#04x} in octal mode")
-    read_data = await ospi.read(address, length, mode=3)
-    dut._log.info(f"Read data {read_data} in octal mode")
-    assert read_data == [0xA8], f"Fast read data {read_data} does not match written data [0xA8] in octal mode"
 
 @cocotb.test()
-async def test_ospi_flash_io_operations(dut):
-    """Test to validate read and write operations in different modes."""
-    dut._log.info("Starting test_ospi_flash_io_operations")
-    # Create and start the internal clock
-    clk = Clock(dut.clk, 10, 'ns')
-    cocotb.start_soon(clk.start())
-    
-    # Create and start the OSPI clock
-    ospi_clk = Clock(dut.OSPI_CLK, 20, 'ns')  # Adjust period as needed
-    cocotb.start_soon(ospi_clk.start())
+async def test_write_then_read_every_mode(dut):
+    """A programmed byte reads back unchanged in all four lane widths."""
+    flash = await setup(dut)
+    for mode in ALL_MODES:
+        address = 0x10 + mode
+        value = 0xA5 + mode
+        await flash.write(address, value, mode=mode)
+        got = await flash.read(address, mode=mode)
+        assert got == value, (
+            f"{MODE_NAMES[mode]} mode: read {got:#04x}, wrote {value:#04x}"
+        )
 
-    
-    cs = dut.OSPI_CS
-    io = dut.OSPI_IO
-
-    # Initialize the OspiFlash instance
-    ospi = OspiFlash(dut, dut.OSPI_CLK, cs, io)
-    await ospi.initialize()
-
-
-    address = 0x02
-    length = 1
-
-    # Single mode test
-    dut._log.info(f"Writing to address {address:#04x} data: [0xB5] in single mode")
-    await ospi.write(address, [0xB5], mode=0)
-    dut._log.info(f"Reading from address {address:#04x} in single mode")
-    read_data = await ospi.read(address, length, mode=0)
-    dut._log.info(f"Read data {read_data} in single mode")
-    assert read_data == [0xB5], f"Read data {read_data} does not match written data [0xB5] in single mode"
-
-    # Dual mode test
-    dut._log.info(f"Writing to address {address:#04x} data: [0xB6] in dual mode")
-    await ospi.write(address, [0xB6], mode=1)
-    dut._log.info(f"Reading from address {address:#04x} in dual mode")
-    read_data = await ospi.read(address, length, mode=1)
-    dut._log.info(f"Read data {read_data} in dual mode")
-    assert read_data == [0xB6], f"Read data {read_data} does not match written data [0xB6] in dual mode"
-
-    # Quad mode test
-    dut._log.info(f"Writing to address {address:#04x} data: [0xB7] in quad mode")
-    await ospi.write(address, [0xB7], mode=2)
-    dut._log.info(f"Reading from address {address:#04x} in quad mode")
-    read_data = await ospi.read(address, length, mode=2)
-    dut._log.info(f"Read data {read_data} in quad mode")
-    assert read_data == [0xB7], f"Read data {read_data} does not match written data [0xB7] in quad mode"
-
-    # Octal mode test
-    dut._log.info(f"Writing to address {address:#04x} data: [0xB8] in octal mode")
-    await ospi.write(address, [0xB8], mode=3)
-    dut._log.info(f"Reading from address {address:#04x} in octal mode")
-    read_data = await ospi.read(address, length, mode=3)
-    dut._log.info(f"Read data {read_data} in octal mode")
-    assert read_data == [0xB8], f"Read data {read_data} does not match written data [0xB8] in octal mode"
 
 @cocotb.test()
-async def test_ospi_flash_hold_operations(dut):
-    """Test to validate hold operations."""
-    dut._log.info("Starting test_ospi_flash_hold_operations")
-    # Create and start the internal clock
-    clk = Clock(dut.clk, 10, 'ns')
-    cocotb.start_soon(clk.start())
-    
-    # Create and start the OSPI clock
-    ospi_clk = Clock(dut.OSPI_CLK, 20, 'ns')  # Adjust period as needed
-    cocotb.start_soon(ospi_clk.start())
-
-    
-    cs = dut.OSPI_CS
-    io = dut.OSPI_IO
-
-    # Initialize the OspiFlash instance
-    ospi = OspiFlash(dut, dut.OSPI_CLK, cs, io)
-    await ospi.initialize()
+async def test_erase_restores_ff(dut):
+    """Erasing returns the byte to 0xFF, in every mode."""
+    flash = await setup(dut)
+    for mode in ALL_MODES:
+        address = 0x20 + mode
+        await flash.write(address, 0x5A, mode=mode)
+        assert await flash.read(address, mode=mode) == 0x5A
+        await flash.erase(address, mode=mode)
+        assert await flash.read(address, mode=mode) == 0xFF
 
 
-    if not hasattr(dut, 'HOLD_N'):
-        dut._log.warning("HOLD_N signal is not defined in the DUT. Skipping hold operations tests.")
-        return
+@cocotb.test()
+async def test_modes_share_one_memory(dut):
+    """A byte written in one mode is readable in any other."""
+    flash = await setup(dut)
+    await flash.write(0x30, 0xC3, mode=3)   # octal
+    for mode in ALL_MODES:
+        got = await flash.read(0x30, mode=mode)
+        assert got == 0xC3, f"read back {got:#04x} in {MODE_NAMES[mode]} mode"
 
-    address = 0x03
-    length = 1
 
-    # Write data and hold operation
-    dut._log.info(f"Writing to address {address:#04x} data: [0xC5] in single mode before hold operation")
-    await ospi.write(address, [0xC5], mode=0)
-    dut._log.info("Triggering hold operation")
-    await ospi.hold_operation()
-    dut._log.info(f"Reading from address {address:#04x} in single mode during hold operation")
-    read_data = await ospi.read(address, length, mode=0)
-    dut._log.info(f"Read data {read_data} during hold operation")
-    assert read_data == [0xC5], f"Read data {read_data} does not match written data [0xC5] after hold operation"
+@cocotb.test()
+async def test_addresses_are_independent(dut):
+    """Writing one address leaves its neighbours alone."""
+    flash = await setup(dut)
+    for offset, value in enumerate((0x11, 0x22, 0x33)):
+        await flash.write(0x40 + offset, value, mode=2)
+    for offset, value in enumerate((0x11, 0x22, 0x33)):
+        assert await flash.read(0x40 + offset, mode=2) == value
 
-    dut._log.info("Releasing hold operation")
-    await ospi.release_hold()
-    dut._log.info(f"Writing to address {address:#04x} data: [0xC6] in dual mode after releasing hold")
-    await ospi.write(address, [0xC6], mode=1)
-    dut._log.info(f"Reading from address {address:#04x} in dual mode after releasing hold")
-    read_data = await ospi.read(address, length, mode=1)
-    dut._log.info(f"Read data {read_data} after releasing hold")
-    assert read_data == [0xC6], f"Read data {read_data} does not match written data [0xC6] after releasing hold"
+
+@cocotb.test()
+async def test_unwritten_memory_reads_erased(dut):
+    """Flash powers up erased."""
+    flash = await setup(dut)
+    assert await flash.read(0x7F, mode=2) == 0xFF
+
+
+@cocotb.test()
+async def test_byte_values_round_trip(dut):
+    """Bit patterns that stress lane packing survive the round trip."""
+    flash = await setup(dut)
+    values = [0x00, 0x01, 0x80, 0x0F, 0xF0, 0xFF, 0xA5, 0x5A]
+    for address, value in enumerate(values):
+        await flash.write(address, value, mode=1)
+    for address, value in enumerate(values):
+        got = await flash.read(address, mode=1)
+        assert got == value, f"addr {address:#04x}: {got:#04x} != {value:#04x}"
+
+
+@cocotb.test()
+async def test_24_bit_address_low_byte_selects_cell(dut):
+    """The address is carried as 24 bits; memory is indexed by its low byte."""
+    flash = await setup(dut)
+    await flash.write(0x00, 0x77, mode=2)
+    assert await flash.read(0xABCD00, mode=2) == 0x77
+
+
+@cocotb.test()
+async def test_hold_preserves_memory(dut):
+    """Data written before a hold is intact after the hold is released."""
+    flash = await setup(dut)
+    await flash.write(0x50, 0xC5, mode=0)
+
+    await flash.hold()
+    await flash.release_hold()
+
+    assert await flash.read(0x50, mode=0) == 0xC5
+    # And the device still accepts new traffic afterwards.
+    await flash.write(0x50, 0xC6, mode=1)
+    assert await flash.read(0x50, mode=1) == 0xC6
