@@ -1,5 +1,11 @@
 # cocotbext-ospi
 
+[![CI](https://github.com/JitheshVijay/cocotbext-ospi/actions/workflows/ci.yml/badge.svg)](https://github.com/JitheshVijay/cocotbext-ospi/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/cocotbext-ospi.svg)](https://pypi.org/project/cocotbext-ospi/)
+[![Python versions](https://img.shields.io/pypi/pyversions/cocotbext-ospi.svg)](https://pypi.org/project/cocotbext-ospi/)
+[![Downloads](https://img.shields.io/pypi/dm/cocotbext-ospi.svg)](https://pypi.org/project/cocotbext-ospi/)
+[![License](https://img.shields.io/pypi/l/cocotbext-ospi.svg)](https://github.com/JitheshVijay/cocotbext-ospi/blob/main/LICENSE)
+
 OSPI flash verification for [cocotb](https://www.cocotb.org/): a bus driver,
 a device-level API over the JEDEC command set, and a NOR flash model to test
 against — single, dual, quad and **octal** I/O.
