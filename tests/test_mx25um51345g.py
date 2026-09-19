@@ -11,7 +11,8 @@ from cocotb.clock import Clock
 
 from cocotbext.ospi.devices import (
     MX25UM51345G, CR2_MODE, CR2_DUMMY, CR2_MODE_SOPI, CR2_MODE_SPI,
-    DUMMY_CYCLES, PROTO_1S_1S_1S, PROTO_8S_8S_8S,
+    DUMMY_CYCLES, PROTO_1S_1S_1S, PROTO_8S_8S_8S, PROTO_8D_8D_8D,
+    CR2_MODE_DOPI,
 )
 from cocotbext.ospi.xspi_flash import XspiFlash, STATUS_WEL, STATUS_WIP
 
@@ -198,3 +199,99 @@ async def test_sector_erase_spans_the_sector(dut):
     assert await flash.read_byte(0x00000000) == 0xFF
     assert await flash.read_byte(0x00000FFF) == 0xFF
     assert await flash.read_byte(0x00001000) == 0x33
+
+
+# ── DOPI (8D-8D-8D) ──────────────────────────────────────────────────
+
+@cocotb.test()
+async def test_enter_dopi_and_identify(dut):
+    """CR2 bit 1 selects DTR octal; 8DTRD (EE/11) reads the array there."""
+    flash = await setup(dut)
+    await flash.enter_octal(PROTO_8D_8D_8D)
+    assert flash.protocol == PROTO_8D_8D_8D
+    assert flash.dtr
+    assert await flash.read_id() == [0xC2, 0x80, 0x3A]
+    assert await flash.read_register(CR2_MODE) == CR2_MODE_DOPI
+
+
+@cocotb.test()
+async def test_program_and_read_in_dopi(dut):
+    """Program and read back at double transfer rate."""
+    flash = await setup(dut)
+    await flash.enter_octal(PROTO_8D_8D_8D)
+
+    await flash.program(0x00000100, [0xDE, 0xAD, 0xBE, 0xEF])
+    assert await flash.read(0x00000100, 4) == [0xDE, 0xAD, 0xBE, 0xEF]
+
+
+@cocotb.test()
+async def test_dopi_rejects_an_odd_start_address(dut):
+    """Datasheet note 5: in DTR OPI the start address must be even.
+
+    A part that quietly returned the neighbouring byte instead would be far
+    harder to debug than one that rejects the command, so the model rejects.
+    """
+    flash = await setup(dut)
+    await flash.enter_octal(PROTO_8D_8D_8D)
+
+    await flash.program(0x00000200, [0x11, 0x22])
+    assert await flash.read(0x00000200, 2) == [0x11, 0x22]
+
+    # An odd address is refused: the device never drives, so the bus floats.
+    try:
+        await flash.read(0x00000201, 1)
+    except ValueError as exc:
+        assert "not 0 or 1" in str(exc)
+    else:
+        raise AssertionError("odd start address was accepted in DTR OPI")
+
+
+@cocotb.test()
+async def test_str_and_dtr_octal_agree(dut):
+    """The same bytes come back through SOPI and DOPI."""
+    flash = await setup(dut)
+
+    await flash.enter_octal(PROTO_8S_8S_8S)
+    await flash.program(0x00000300, [0xC0, 0xDE])
+    via_str = await flash.read(0x00000300, 2)
+
+    await flash.exit_octal()
+    await flash.enter_octal(PROTO_8D_8D_8D)
+    via_dtr = await flash.read(0x00000300, 2)
+
+    assert via_str == via_dtr == [0xC0, 0xDE]
+
+
+# ── SFDP ─────────────────────────────────────────────────────────────
+
+@cocotb.test()
+async def test_sfdp_in_spi(dut):
+    """The part describes itself, before anything is configured."""
+    flash = await setup(dut)
+    info = await flash.discover()
+
+    assert info.density_bits == 512 * 1024 * 1024
+    assert info.size_bytes == 64 * 1024 * 1024
+    assert info.address_bytes_name == "4 only"
+    assert info.dtr
+    assert info.page_size == 256
+    assert dict((op, size) for size, op in info.erase_types) == {
+        0x21: 4096, 0xDC: 65536,
+    }
+
+
+@cocotb.test()
+async def test_sfdp_survives_the_mode_switch(dut):
+    """RDSFDP works in octal too, with its different shape.
+
+    In SPI it takes 3 address bytes and 8 dummy cycles; in OPI, 4 and 20.
+    Reading the same table both ways is what proves the profile has both.
+    """
+    flash = await setup(dut)
+    in_spi = await flash.read_sfdp(64)
+
+    await flash.enter_octal(PROTO_8S_8S_8S)
+    in_octal = await flash.read_sfdp(64)
+
+    assert in_spi == in_octal, "SFDP differs between SPI and octal"
+    assert in_spi[:4] == b"SFDP"

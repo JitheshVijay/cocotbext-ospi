@@ -20,6 +20,9 @@ export PYTHONPATH := $(shell pwd)/..:$(shell pwd):$(PYTHONPATH)
 export COCOTB_HDL_TIMEUNIT
 export COCOTB_HDL_TIMEPRECISION
 
+# The SFDP ROM is an include next to the model.
+COMPILE_ARGS += -I$(shell pwd)/../verilog/devices
+
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
 clean::

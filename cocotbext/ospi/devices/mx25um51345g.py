@@ -16,7 +16,7 @@ Command extension is the bitwise complement: 8READ is EC/13, PP4B is 12/ED.
 
 from .profile import (
     DeviceProfile, Op, EXT_INVERT,
-    PROTO_1S_1S_1S, PROTO_8S_8S_8S,
+    PROTO_1S_1S_1S, PROTO_8S_8S_8S, PROTO_8D_8D_8D,
 )
 
 # CR2 addresses.
@@ -56,7 +56,8 @@ MX25UM51345G = DeviceProfile(
     name="MX25UM51345G",
     jedec_id=[0xC2, 0x80, 0x3A],
     cmd_ext=EXT_INVERT,
-    supported=[PROTO_1S_1S_1S, PROTO_8S_8S_8S],   # DOPI not modelled yet
+    supported=[PROTO_1S_1S_1S, PROTO_8S_8S_8S, PROTO_8D_8D_8D],
+    octal_default=PROTO_8S_8S_8S,
     array_dummy=20,
     ops={
         # Register access. Note how RDSR and RDID gain an address phase and
@@ -68,10 +69,17 @@ MX25UM51345G = DeviceProfile(
         "WRDI":  Op(0x04),
         "RDCR2": Op(0x71, addr_bytes=4, dummy=0, opi_dummy=4),
         "WRCR2": Op(0x72, addr_bytes=4, dummy=0),
+        # Software reset: RSTEN must immediately precede RST.
+        "RSTEN": Op(0x66),
+        "RST":   Op(0x99),
 
         # Array access.
         "READ":  Op(0x13, addr_bytes=4, dummy=0),    # SPI 4-byte read
-        "8READ": Op(0xEC, addr_bytes=4, opi_dummy=20),
+        "8READ": Op(0xEC, addr_bytes=4, opi_dummy=20),   # STR octal
+        "8DTRD": Op(0xEE, addr_bytes=4, opi_dummy=20),   # DTR octal
+        # RDSFDP takes 3 address bytes and 8 dummy cycles in SPI, but 4 and
+        # 20 in OPI -- so discovery has to know which mode it is in.
+        "RDSFDP": Op(0x5A, addr_bytes=3, dummy=8, opi_addr_bytes=4, opi_dummy=20),
         "PP":    Op(0x12, addr_bytes=4, dummy=0),
         "SE":    Op(0x21, addr_bytes=4, dummy=0),
     },

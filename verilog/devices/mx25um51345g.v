@@ -49,6 +49,10 @@ module mx25um51345g #(
                      OP_WRCR2  = 8'h72,
                      OP_READ4B = 8'h13,   // SPI 4-byte read
                      OP_8READ  = 8'hEC,   // octal STR read
+                     OP_8DTRD  = 8'hEE,   // octal DTR read
+                     OP_RDSFDP = 8'h5A,
+                     OP_RSTEN  = 8'h66,
+                     OP_RST    = 8'h99,
                      OP_PP4B   = 8'h12,
                      OP_SE4B   = 8'h21;
 
@@ -77,10 +81,13 @@ module mx25um51345g #(
 
     reg [7:0]  memory [0:MEM_DEPTH-1];
 
+`include "mx25um51345g_sfdp.vh"
+
     reg [7:0]  cr2_mode;      // CR2[0x00000000]
     reg [7:0]  cr2_dqs;       // CR2[0x00000200]
     reg [2:0]  cr2_dc;        // CR2[0x00000300], DC[2:0]
     reg        wel, wip;
+    reg        rst_enabled;   // RSTEN must immediately precede RST
 
     reg [2:0]  phase;
     reg [7:0]  shreg;
@@ -100,12 +107,19 @@ module mx25um51345g #(
     reg        driving;
     reg [7:0]  dout;
     integer    lanes;
+    reg        dtr;
+
+    // Delayed copy of the bus. In DTR the master changes data on the same
+    // edges the device samples, so sampling the live net races it.
+    wire [7:0] io_d;
+    assign #1 io_d = io;
 
     // Dummy cycles for array reads, from the datasheet's DC table:
     // 000 = 20 (default), then 18, 16, 14, 12, 10, 8, 6.
     wire [5:0] array_dummy = 6'd20 - {cr2_dc, 1'b0};
 
     wire in_opi = (cr2_mode != MODE_SPI);
+    wire in_dopi = (cr2_mode == MODE_DOPI);
 
     integer i;
     initial begin
@@ -115,6 +129,7 @@ module mx25um51345g #(
         cr2_dc    = 3'b000;       // 20 dummy cycles
         wel       = 1'b0;
         wip       = 1'b0;
+        rst_enabled = 1'b0;
         phase     = P_CMD;
         shreg     = 8'h00;
         bitcount  = 0;
@@ -122,6 +137,7 @@ module mx25um51345g #(
         pp_count  = 0;
         driving   = 1'b0;
         lanes     = 1;
+        dtr       = 1'b0;
     end
 
     // The device answers on io1 in SPI and across all eight lanes in octal.
@@ -149,8 +165,10 @@ module mx25um51345g #(
     function integer addr_bytes_for;
         input [7:0] op;
         case (op)
-            OP_RDCR2, OP_WRCR2, OP_READ4B, OP_8READ,
+            OP_RDCR2, OP_WRCR2, OP_READ4B, OP_8READ, OP_8DTRD,
             OP_PP4B, OP_SE4B: addr_bytes_for = 4;
+            // RDSFDP takes 3 address bytes in SPI and 4 in OPI.
+            OP_RDSFDP: addr_bytes_for = in_opi ? 4 : 3;
             // In octal these gain an address phase they do not have in SPI.
             OP_RDSR, OP_RDID: addr_bytes_for = in_opi ? 4 : 0;
             default: addr_bytes_for = 0;
@@ -160,8 +178,10 @@ module mx25um51345g #(
     function integer dummy_for;
         input [7:0] op;
         case (op)
-            OP_8READ:  dummy_for = array_dummy;
+            OP_8READ, OP_8DTRD: dummy_for = array_dummy;
             OP_READ4B: dummy_for = 0;
+            // 8 dummy cycles in SPI, 20 in OPI, per the command tables.
+            OP_RDSFDP: dummy_for = in_opi ? 20 : 8;
             // Register reads need four dummy cycles once in OPI.
             OP_RDSR, OP_RDID, OP_RDCR2: dummy_for = in_opi ? 4 : 0;
             default: dummy_for = 0;
@@ -171,7 +191,8 @@ module mx25um51345g #(
     function is_read;
         input [7:0] op;
         case (op)
-            OP_RDID, OP_RDSR, OP_RDCR2, OP_READ4B, OP_8READ: is_read = 1'b1;
+            OP_RDID, OP_RDSR, OP_RDCR2, OP_READ4B, OP_8READ,
+            OP_8DTRD, OP_RDSFDP: is_read = 1'b1;
             default: is_read = 1'b0;
         endcase
     endfunction
@@ -190,7 +211,8 @@ module mx25um51345g #(
                         default:   outbyte = 8'h00;
                     endcase
                 end
-                OP_READ4B, OP_8READ: outbyte = memory[addr % MEM_DEPTH];
+                OP_READ4B, OP_8READ, OP_8DTRD: outbyte = memory[addr % MEM_DEPTH];
+                OP_RDSFDP: outbyte = sfdp[addr % SFDP_BYTES];
                 default: outbyte = 8'h00;
             endcase
         end
@@ -203,9 +225,13 @@ module mx25um51345g #(
                                     (bytecount == 2) ? ID2 : 8'h00;
                 OP_RDSR:  outbyte = status;          // repeats while clocked
                 OP_RDCR2: outbyte = outbyte;         // same register repeats
-                OP_READ4B, OP_8READ: begin
+                OP_READ4B, OP_8READ, OP_8DTRD: begin
                     addr = addr + 1;
                     outbyte = memory[addr % MEM_DEPTH];
+                end
+                OP_RDSFDP: begin
+                    addr = addr + 1;
+                    outbyte = sfdp[addr % SFDP_BYTES];
                 end
                 default: outbyte = 8'h00;
             endcase
@@ -272,8 +298,20 @@ module mx25um51345g #(
         begin
             case (opcode)
                 OP_WREN: begin if (!wip) wel = 1'b1; phase = P_DEAD; end
+                OP_RSTEN: begin rst_enabled = 1'b1; phase = P_DEAD; end
+                OP_RST: begin
+                    // Only honoured directly after RSTEN, as the part
+                    // requires; any other command in between cancels it.
+                    if (rst_enabled) begin
+                        cr2_mode = MODE_SPI;
+                        wel = 1'b0;
+                    end
+                    rst_enabled = 1'b0;
+                    phase = P_DEAD;
+                end
                 OP_WRDI: begin wel = 1'b0; phase = P_DEAD; end
                 default: begin
+                    rst_enabled = 1'b0;
                     addr = 32'h0;
                     if (addr_bytes_for(opcode) > 0) begin
                         phase = P_ADDR;
@@ -288,6 +326,13 @@ module mx25um51345g #(
     task after_addr;
         begin
             dummy_left = dummy_for(opcode);
+            // Datasheet note 5: in DTR OPI the starting address must be even
+            // (A0 = 0). An odd address is rejected rather than quietly
+            // returning the wrong byte.
+            if (in_dopi && addr[0] &&
+                (opcode == OP_8DTRD || opcode == OP_PP4B)) begin
+                phase = P_DEAD;
+            end else
             if (opcode == OP_PP4B) begin
                 pp_addr  = addr;
                 pp_count = 0;
@@ -338,6 +383,7 @@ module mx25um51345g #(
         // The mode in force is latched at the start of each transaction, so
         // a WRCR2 that switches protocol takes effect on the *next* command.
         lanes     = in_opi ? 8 : 1;
+        dtr       = in_dopi;
         if (!csb) begin
             opcode   = 8'h00;
             pp_count = 0;
@@ -345,8 +391,12 @@ module mx25um51345g #(
     end
 
     // ── device drives while the clock is low ─────────────────────────
-    always @(csb, clk) begin
-        if (!csb && !clk && phase == P_READ) begin
+    // Combinational: phase can change on the same edge the master is
+    // about to sample, so a block sensitive only to clk and csb would
+    // not re-evaluate until the next edge and the bus would read as
+    // released for the first byte.
+    always @(*) begin
+        if (!csb && phase == P_READ && (dtr || !clk)) begin
             driving = 1'b1;
             dout = outbyte;
             if (lanes == 1) dout[1] = outbyte[7 - bitcount];
@@ -355,12 +405,15 @@ module mx25um51345g #(
         end
     end
 
-    // ── sample the master ────────────────────────────────────────────
-    always @(posedge clk) begin
-        if (!csb) begin
+    // ── shifting, on one or both edges ───────────────────────────────
+    task sample_edge;
+        begin
             if (phase == P_DUMMY) begin
-                dummy_left = dummy_left - 1;
-                if (dummy_left == 0) phase = P_READ;
+                // Dummy cycles are quoted in clocks, so only count rising.
+                if (clk) begin
+                    dummy_left = dummy_left - 1;
+                    if (dummy_left == 0) phase = P_READ;
+                end
             end else if (phase == P_READ) begin
                 bitcount = bitcount + lanes;
                 if (bitcount >= 8) begin
@@ -369,7 +422,7 @@ module mx25um51345g #(
                     advance_out;
                 end
             end else if (phase != P_DEAD) begin
-                if (lanes == 8) shreg = io;
+                if (lanes == 8) shreg = dtr ? io_d : io;
                 else            shreg = {shreg[6:0], io[0]};
                 bitcount = bitcount + lanes;
                 if (bitcount >= 8) begin
@@ -377,6 +430,13 @@ module mx25um51345g #(
                     got_byte;
                 end
             end
+        end
+    endtask
+
+    always @(clk) begin
+        if (!csb) begin
+            if (dtr)      sample_edge;   // both edges in DOPI
+            else if (clk) sample_edge;   // rising only otherwise
         end
     end
 

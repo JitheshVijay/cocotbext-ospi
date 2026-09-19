@@ -46,7 +46,10 @@ module mt35xu512aba #(
                      OP_READ4B  = 8'h13,   // extended-SPI 4-byte read
                      OP_DTR_RD  = 8'hFD,   // octal DTR fast read
                      OP_PP4B    = 8'h12,
-                     OP_SE4B    = 8'h21;
+                     OP_SE4B    = 8'h21,
+                     OP_RDSFDP  = 8'h5A,
+                     OP_RSTEN   = 8'h66,
+                     OP_RST     = 8'h99;
 
     localparam [7:0] CFR0V_ADDR = 8'h00,
                      CFR1V_ADDR = 8'h01;
@@ -68,8 +71,11 @@ module mt35xu512aba #(
 
     reg [7:0]  memory [0:MEM_DEPTH-1];
 
+`include "mt35xu512aba_sfdp.vh"
+
     reg [7:0]  cfr0v, cfr1v;
     reg        wel, wip;
+    reg        rst_enabled;   // RSTEN must immediately precede RST
 
     reg [2:0]  phase;
     reg [7:0]  shreg;
@@ -105,6 +111,7 @@ module mt35xu512aba #(
         cfr1v     = 8'h1F;           // Linux's SPINOR_REG_MT_CFR1V_DEF
         wel       = 1'b0;
         wip       = 1'b0;
+        rst_enabled = 1'b0;
         phase     = P_CMD;
         shreg     = 8'h00;
         bitcount  = 0;
@@ -139,6 +146,7 @@ module mt35xu512aba #(
         input [7:0] op;
         case (op)
             OP_READ4B, OP_DTR_RD, OP_PP4B, OP_SE4B: addr_bytes_for = 4;
+            OP_RDSFDP: addr_bytes_for = octal ? 4 : 3;
             // Register access carries an address naming the register.
             OP_RD_REG, OP_WR_REG: addr_bytes_for = 4;
             default: addr_bytes_for = 0;
@@ -152,6 +160,7 @@ module mt35xu512aba #(
             OP_RD_REG: dummy_for = octal ? 8 : 0;  // Linux: rdsr_dummy = 8
             OP_RDSR:   dummy_for = octal ? 8 : 0;
             OP_RDID:   dummy_for = octal ? 8 : 0;
+            OP_RDSFDP: dummy_for = octal ? 20 : 8;
             default:   dummy_for = 0;
         endcase
     endfunction
@@ -159,7 +168,8 @@ module mt35xu512aba #(
     function is_read;
         input [7:0] op;
         case (op)
-            OP_RDID, OP_RDSR, OP_RD_REG, OP_READ4B, OP_DTR_RD: is_read = 1'b1;
+            OP_RDID, OP_RDSR, OP_RD_REG, OP_READ4B, OP_DTR_RD,
+            OP_RDSFDP: is_read = 1'b1;
             default: is_read = 1'b0;
         endcase
     endfunction
@@ -177,6 +187,7 @@ module mt35xu512aba #(
                     endcase
                 end
                 OP_READ4B, OP_DTR_RD: outbyte = memory[addr % MEM_DEPTH];
+                OP_RDSFDP: outbyte = sfdp[addr % SFDP_BYTES];
                 default: outbyte = 8'h00;
             endcase
         end
@@ -193,6 +204,10 @@ module mt35xu512aba #(
                     addr = addr + 1;
                     outbyte = memory[addr % MEM_DEPTH];
                 end
+                OP_RDSFDP: begin
+                    addr = addr + 1;
+                    outbyte = sfdp[addr % SFDP_BYTES];
+                end
                 default: outbyte = 8'h00;
             endcase
         end
@@ -202,8 +217,20 @@ module mt35xu512aba #(
         begin
             case (opcode)
                 OP_WREN: begin if (!wip) wel = 1'b1; phase = P_DEAD; end
+                OP_RSTEN: begin rst_enabled = 1'b1; phase = P_DEAD; end
+                OP_RST: begin
+                    // Only honoured directly after RSTEN, as the part
+                    // requires; any other command in between cancels it.
+                    if (rst_enabled) begin
+                        cfr0v = CFR0V_EXT_SPI;
+                        wel = 1'b0;
+                    end
+                    rst_enabled = 1'b0;
+                    phase = P_DEAD;
+                end
                 OP_WRDI: begin wel = 1'b0; phase = P_DEAD; end
                 default: begin
+                    rst_enabled = 1'b0;
                     addr = 32'h0;
                     if (addr_bytes_for(opcode) > 0) phase = P_ADDR;
                     else                            after_addr;
@@ -342,7 +369,11 @@ module mt35xu512aba #(
     end
 
     // ── driving ──────────────────────────────────────────────────────
-    always @(csb, clk) begin
+    // Combinational: phase can change on the same edge the master is
+    // about to sample, so a block sensitive only to clk and csb would
+    // not re-evaluate until the next edge and the bus would read as
+    // released for the first byte.
+    always @(*) begin
         if (!csb && phase == P_READ && (dtr || !clk)) begin
             driving = 1'b1;
             dout = outbyte;

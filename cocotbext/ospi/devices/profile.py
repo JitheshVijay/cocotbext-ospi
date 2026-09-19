@@ -70,16 +70,17 @@ class DeviceProfile:
     sector_size: int = 4096
     #: Dummy cycles the part uses for array reads once in octal.
     array_dummy: int = 20
+    #: Which octal protocol ``enter_octal()`` picks when not told. Explicit
+    #: rather than inferred: a part supporting both STR and DTR octal has a
+    #: preferred one, and guessing changes behaviour when a mode is added.
+    octal_default: Optional[str] = None
 
     @property
     def default_octal(self) -> str:
-        """The octal protocol this part actually uses.
-
-        Macronix supports both STR and DTR octal; Micron's driver path is
-        DTR only. Callers that just want "octal" should get whichever this
-        part is built around rather than a hardcoded guess.
-        """
-        for proto in (PROTO_8D_8D_8D, PROTO_8S_8S_8S):
+        """The octal protocol ``enter_octal()`` uses when not given one."""
+        if self.octal_default:
+            return self.octal_default
+        for proto in (PROTO_8S_8S_8S, PROTO_8D_8D_8D):
             if proto in self.supported:
                 return proto
         raise ValueError(f"{self.name} profile models no octal protocol")

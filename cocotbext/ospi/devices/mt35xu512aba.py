@@ -57,6 +57,7 @@ MT35XU512ABA = DeviceProfile(
     jedec_id=[0x2C, 0x5B, 0x1A],
     cmd_ext=EXT_REPEAT,
     supported=[PROTO_1S_1S_1S, PROTO_8D_8D_8D],
+    octal_default=PROTO_8D_8D_8D,
     array_dummy=OCTAL_DTR_DUMMY,
     ops={
         "RDID":  Op(0x9F, addr_bytes=0, dummy=0, opi_dummy=8),
@@ -67,9 +68,12 @@ MT35XU512ABA = DeviceProfile(
         # its own opcodes and a 1-byte register index inside a 4-byte field.
         "RDCR2": Op(0x85, addr_bytes=4, dummy=0, opi_dummy=8),
         "WRCR2": Op(0x81, addr_bytes=4, dummy=0),
+        "RSTEN": Op(0x66),
+        "RST":   Op(0x99),
 
         "READ":  Op(0x13, addr_bytes=4, dummy=0),    # extended SPI
         "8READ": Op(0xFD, addr_bytes=4, opi_dummy=OCTAL_DTR_DUMMY),
+        "RDSFDP": Op(0x5A, addr_bytes=3, dummy=8, opi_addr_bytes=4, opi_dummy=20),
         "PP":    Op(0x12, addr_bytes=4, dummy=0),
         "SE":    Op(0x21, addr_bytes=4, dummy=0),
     },

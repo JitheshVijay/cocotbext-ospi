@@ -115,7 +115,7 @@ their datasheets and cross-checked against Linux's `drivers/mtd/spi-nor`:
 
 | Part | Protocols | Command extension | Octal entry |
 |---|---|---|---|
-| **Macronix MX25UM51345G** | 1S-1S-1S, 8S-8S-8S | **inverted** (`~opcode`) | CR2 `0x00000000` |
+| **Macronix MX25UM51345G** | 1S-1S-1S, 8S-8S-8S, 8D-8D-8D | **inverted** (`~opcode`) | CR2 `0x00000000` |
 | **Micron MT35XU512ABA** | 1S-1S-1S, 8D-8D-8D | **repeated** (`opcode`) | CFR1V then CFR0V |
 
 ```python
@@ -152,26 +152,69 @@ table.
 
 ### 8D-8D-8D
 
-The Micron model runs at double transfer rate: a bit per lane on **both**
-clock edges, so eight lanes move two bytes per clock. That is why an odd
-number of bytes cannot be transferred in that mode, and why leaving it means
-writing CFR0V and CFR1V together in one 2-byte write — which is exactly what
-Linux does.
+Both parts run at double transfer rate: a bit per lane on **both** clock
+edges, so eight lanes move two bytes per clock. That is why an odd number of
+bytes cannot be transferred in that mode, and why leaving it means writing
+CFR0V and CFR1V together in one 2-byte write — which is exactly what Linux
+does.
+
+Macronix has separate STR and DTR octal reads (`8READ` = `EC`/`13`,
+`8DTRD` = `EE`/`11`) selected by CR2 bit 0 or bit 1; `enter_octal()` takes
+the protocol you want. Its DTR mode also enforces datasheet note 5: **the
+start address must be even**. An odd one is rejected rather than quietly
+returning the neighbouring byte.
 
 The DTR edge handling is validated against PicoSoC's `spiflash.v` quad-DTR
 read (`0xED`), an independently written model, for the same reason the rest
 of the interop suite exists.
 
-### What is not modelled
+### SFDP
 
-DQS, SFDP, the flag status register, security and lock registers,
-suspend/resume, and Macronix's DOPI (8D-8D-8D) mode. The arrays are a small
-window rather than the full 64 MB so simulations stay fast; capacity is
-reported honestly in the JEDEC ID.
+Both models carry a real SFDP image, so a driver can discover a part instead
+of being told about it:
+
+```python
+info = await flash.discover()
+info.size_bytes          # 67108864  (512 Mb)
+info.address_bytes_name  # '4 only'
+info.dtr                 # True
+info.page_size           # 256
+info.erase_types         # [(4096, 0x21), (65536, 0xDC)]
+```
+
+`RDSFDP` (`0x5A`) changes shape with the protocol — 3 address bytes and 8
+dummy cycles in SPI, 4 and 20 in OPI — so discovery has to know which mode
+it is in. Both profiles carry both shapes, and a test reads the same table
+each way.
+
+The tables are built by `cocotbext/ospi/sfdp.py` and emitted into the models
+by `verilog/devices/generate_sfdp.py`. Defining them once and generating the
+Verilog is what stops the model and the parser drifting apart — and the
+tests read back through the parser exactly what the generator put in.
 
 ```
-make -C tests -f Makefile.mx25    # Macronix, 12 tests
-make -C tests -f Makefile.mt35    # Micron, 11 tests
+python3 verilog/devices/generate_sfdp.py   # regenerate the ROMs
+```
+
+### Reset
+
+`initialize()` issues the `RSTEN`/`RST` pair. A part left in octal by a
+previous run cannot understand a single-lane command, so the sequence is
+sent in every protocol the profile supports; the one the part is actually in
+takes effect and the rest are ignored as malformed. Without this, tests
+quietly depend on whatever mode the previous one left behind.
+
+### What is not modelled
+
+DQS, the flag status register, security and lock registers, suspend/resume,
+and SFDP tables beyond the BFPT (no xSPI Profile 1.0 table, no 4-byte
+address instruction table). The arrays are a small window rather than the
+full 64 MB so simulations stay fast; capacity is reported honestly in both
+the JEDEC ID and SFDP.
+
+```
+make -C tests -f Makefile.mx25    # Macronix, 18 tests
+make -C tests -f Makefile.mt35    # Micron, 15 tests
 ```
 
 ## Bus signals

@@ -178,3 +178,56 @@ async def test_sector_erase_spans_the_sector(dut):
     assert await flash.read(0x00000000, 2) == [0xFF, 0xFF]
     assert await flash.read(0x00000FFE, 2) == [0xFF, 0xFF]
     assert await flash.read(0x00001000, 2) == [0x33, 0x33]
+
+
+# ── SFDP ─────────────────────────────────────────────────────────────
+
+@cocotb.test()
+async def test_sfdp_in_extended_spi(dut):
+    """The part describes itself before anything is configured."""
+    flash = await setup(dut)
+    info = await flash.discover()
+
+    assert info.density_bits == 512 * 1024 * 1024
+    assert info.size_bytes == 64 * 1024 * 1024
+    assert info.address_bytes_name == "4 only"
+    assert info.dtr
+    assert info.page_size == 256
+
+
+@cocotb.test()
+async def test_sfdp_matches_the_jedec_id_density(dut):
+    """SFDP density and the ID's capacity byte tell the same story."""
+    flash = await setup(dut)
+    ident = await flash.read_id()
+    info = await flash.discover()
+
+    assert ident == [0x2C, 0x5B, 0x1A]
+    # 0x1A is the 512 Mb capacity code for this family.
+    assert info.density_bits == 512 * 1024 * 1024
+
+
+@cocotb.test()
+async def test_sfdp_survives_the_mode_switch(dut):
+    """RDSFDP works in octal DTR too, with its different shape."""
+    flash = await setup(dut)
+    in_spi = await flash.read_sfdp(64)
+
+    await flash.enter_octal()
+    in_octal = await flash.read_sfdp(64)
+
+    assert in_spi == in_octal, "SFDP differs between extended SPI and octal"
+    assert in_spi[:4] == b"SFDP"
+
+
+@cocotb.test()
+async def test_software_reset_returns_to_extended_spi(dut):
+    """RSTEN then RST drops the part back to one lane."""
+    flash = await setup(dut)
+    await flash.enter_octal()
+    assert await flash.read_id() == [0x2C, 0x5B, 0x1A]
+
+    await flash.reset()
+    assert flash.protocol == PROTO_1S_1S_1S
+    assert await flash.read_id() == [0x2C, 0x5B, 0x1A]
+    assert await flash.read_register(CFR0V) == CFR0V_EXT_SPI
