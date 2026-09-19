@@ -56,6 +56,36 @@ wrong is the most common reason a driver talks to nothing.
 **Programming only clears bits.** NOR flash needs an erase to set a bit back
 to 1. Programming `0x0F` over `0xF0` gives `0x00`, not `0x0F`.
 
+### What it looks like on the wire
+
+All three diagrams below are generated from a real simulation — `capture.py`
+runs the transactions, Icarus dumps a VCD, and `render.py` draws it. Nothing
+is drawn by hand, so they cannot drift away from what the model does.
+
+An octal I/O read. The opcode goes out one bit per clock on a single lane;
+only then does the bus widen to all eight for the address and data — a whole
+byte per clock. Note the dummy cycles, where neither side drives while the
+bus turns around:
+
+![Fast read octal I/O](docs/waveforms/octal-read.svg)
+
+The same byte read at every width. This is what the wide modes buy you —
+40 clocks single-lane down to 21 octal, for one byte at the same address:
+
+![One byte at every width](docs/waveforms/width-comparison.svg)
+
+A status read while a program is in flight. The device answers `0x01` — WIP
+set — which is what `wait_ready()` polls for:
+
+![Read status](docs/waveforms/read-status.svg)
+
+To regenerate them:
+
+```
+make -C docs/waveforms        # run the sim, dump capture.vcd
+make -C docs/waveforms svg    # capture.vcd -> *.svg
+```
+
 ### Commands
 
 | Opcode | Name | Address | Data |
