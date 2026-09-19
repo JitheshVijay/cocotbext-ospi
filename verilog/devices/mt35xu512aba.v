@@ -14,6 +14,11 @@
 // calls this SPI_NOR_EXT_REPEAT, and it is the one thing most likely to be
 // wrong in a controller ported from a Macronix part.
 //
+// A mismatched extension is rejected here. That is a modelling choice rather
+// than a documented behaviour: the sources say what a controller must send,
+// not what silicon does when it sends the wrong thing. Rejecting makes a
+// misconfigured controller fail immediately instead of unpredictably.
+//
 // 8D-8D-8D carries a bit per lane on *both* clock edges, so eight lanes move
 // two bytes per clock. That is why an odd-length transfer is impossible in
 // this mode; Linux works around it when disabling octal by writing CFR0V and

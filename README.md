@@ -143,8 +143,14 @@ assert await flash.read_id() == [0xC2, 0x80, 0x3A]   # now over eight lanes
 commands are two bytes: the opcode and an extension. Macronix sends the
 bitwise complement (`8READ` is `EC`/`13`), Micron repeats the opcode. Linux
 calls these `SPI_NOR_EXT_INVERT` and `SPI_NOR_EXT_REPEAT`. Send the wrong
-one and the part ignores the command — the two models disagree about this
-deliberately, and each has a test proving it rejects the other's form.
+one and the model rejects the command — the two disagree about this
+deliberately, and each has a test proving it refuses the other's form.
+
+That rejection is a modelling choice, flagged as such in both models. The
+datasheets and Linux say what a controller must *send*; neither says what
+silicon does with a mismatched extension. Refusing it is what turns a
+controller configured for the wrong vendor into an obvious failure instead
+of undefined behaviour.
 
 **Commands change shape with the protocol.** `RDSR` takes no address and no
 dummy cycles in SPI, but on the Macronix part in OPI it grows a 4-byte
@@ -233,14 +239,20 @@ quietly depend on whatever mode the previous one left behind.
 
 ### What is not modelled
 
-DQS, the flag status register, security and lock registers, suspend/resume,
-and the 4-byte address instruction table (id `0xFF84`). The arrays are a
-small window rather than the full 64 MB so simulations stay fast; capacity
-is reported honestly in both the JEDEC ID and SFDP.
+Micron's suspend/resume and its lock registers; Macronix's SPB and lock
+register (the volatile DPB layer is modelled, the non-volatile one is not);
+ECC and CRC; the secured OTP array; and SFDP tables beyond BFPT, Profile 1.0
+and 4BAIT. Timing parameters are simulation-convenient rather than
+datasheet-accurate — `PROGRAM_NS` and `ERASE_NS` are parameters, not the
+real tPP/tSE.
+
+The arrays are a small window rather than the full 64 MB so simulations stay
+fast; capacity is reported honestly in both the JEDEC ID and SFDP.
 
 ```
-make -C tests -f Makefile.mx25    # Macronix, 22 tests
-make -C tests -f Makefile.mt35    # Micron, 19 tests
+make -C tests -f Makefile.mx25          # Macronix, 38 tests
+make -C tests -f Makefile.mt35          # Micron, 24 tests
+make -C tests -f Makefile.controller    # controller DUT, 8 tests
 ```
 
 ## A controller as DUT

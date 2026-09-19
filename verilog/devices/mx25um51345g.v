@@ -13,9 +13,15 @@
 //
 // In octal every command is two bytes: the opcode followed by its bitwise
 // complement (Linux calls this SPI_NOR_EXT_INVERT). 8READ is EC/13, PP4B is
-// 12/ED, WREN is 06/F9. A command whose second byte is not the complement is
-// ignored, which is what the real part does and what catches a controller
-// that forgot the extension.
+// 12/ED, WREN is 06/F9.
+//
+// A command whose second byte is not the complement is rejected here. That
+// is a modelling choice, not a documented behaviour -- the datasheet gives
+// the extension for every opcode but does not say what silicon does with a
+// mismatched one. Rejecting is the useful choice for a model: it turns a
+// controller configured for the wrong vendor's extension into an immediate,
+// obvious failure instead of undefined behaviour. Do not read the test that
+// pins this as a claim about the real part.
 //
 // Addresses are 4 bytes in both modes for the commands modelled here.
 // Register reads that need no dummy cycles in SPI need four in octal --

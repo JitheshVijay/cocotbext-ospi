@@ -69,6 +69,9 @@ async def test_extension_is_repeat_not_invert(dut):
 
     The two profiles disagree here on purpose -- it is the most likely thing
     to be wrong in a controller ported between the vendors.
+
+    As above, rejection is the model's choice rather than a documented
+    silicon behaviour.
     """
     flash = await setup(dut)
     await flash.enter_octal()

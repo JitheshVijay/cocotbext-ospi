@@ -83,8 +83,12 @@ async def test_wrong_command_extension_is_ignored(dut):
     """A command whose extension is not the complement does nothing.
 
     Macronix uses SPI_NOR_EXT_INVERT. Sending a repeated opcode instead --
-    what a Micron part would want -- must not be honoured, which is exactly
-    the failure a controller hits with the wrong extension configured.
+    what a Micron part would want -- is rejected by the model.
+
+    Note this pins a modelling choice, not a documented behaviour: the
+    sources say what a controller must send, not what silicon does with a
+    mismatched extension. Rejecting is what makes a misconfigured controller
+    fail loudly here.
     """
     flash = await setup(dut)
     await flash.enter_octal()
