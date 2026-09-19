@@ -6,17 +6,18 @@ Verilog include. Generating it rather than hand-writing the bytes is what
 keeps the model and the parser from drifting apart -- and the tests read
 back through the parser exactly what this put in.
 
-    python3 verilog/devices/generate_sfdp.py
+    python3 cocotbext/ospi/verilog/devices/generate_sfdp.py
 """
 
 import importlib.util
 from pathlib import Path
 
 HERE = Path(__file__).parent
-ROOT = HERE.parent.parent
+# .../cocotbext/ospi/verilog/devices -> .../cocotbext/ospi
+PACKAGE = HERE.parent.parent
 
 spec = importlib.util.spec_from_file_location(
-    "sfdp", ROOT / "cocotbext" / "ospi" / "sfdp.py"
+    "sfdp", PACKAGE / "sfdp.py"
 )
 sfdp = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sfdp)

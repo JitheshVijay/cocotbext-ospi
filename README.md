@@ -17,6 +17,22 @@ single-lane SPI. This one covers flash specifically, up to an eight-lane
 data bus, with the write-enable latch, status polling, page program and
 sector erase — and it targets cocotb 2.x.
 
+## Pointing a testbench at the models
+
+The Verilog ships inside the package, so there is nothing to vendor. Ask the
+package where it is:
+
+```make
+VERILOG_DIR := $(shell python3 -c \
+    "import cocotbext.ospi as o; print(o.verilog_dir())")
+
+VERILOG_SOURCES  = $(VERILOG_DIR)/devices/mx25um51345g.v
+VERILOG_SOURCES += $(VERILOG_DIR)/devices/mx25um51345g_test.v
+COMPILE_ARGS    += -I$(VERILOG_DIR)/devices
+```
+
+Or from Python, `cocotbext.ospi.verilog_dir()` returns a `pathlib.Path`.
+
 ## Usage
 
 ```python

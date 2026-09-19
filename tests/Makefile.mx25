@@ -2,6 +2,12 @@
 #
 #   make -f Makefile.mx25
 
+VERILOG_DIR := $(shell PYTHONPATH=$(shell pwd)/.. python3 -c \
+    "import cocotbext.ospi as o; print(o.verilog_dir())" 2>/dev/null)
+ifeq ($(VERILOG_DIR),)
+VERILOG_DIR := $(shell pwd)/../cocotbext/ospi/verilog
+endif
+
 TOPLEVEL_LANG ?= verilog
 SIM ?= icarus
 
@@ -13,15 +19,15 @@ SIM_BUILD = sim_build_mx25
 TOPLEVEL = mx25um51345g_test
 MODULE   = test_mx25um51345g
 
-VERILOG_SOURCES  = $(shell pwd)/../verilog/devices/mx25um51345g.v
-VERILOG_SOURCES += $(shell pwd)/../verilog/devices/mx25um51345g_test.v
+VERILOG_SOURCES  = $(VERILOG_DIR)/devices/mx25um51345g.v
+VERILOG_SOURCES += $(VERILOG_DIR)/devices/mx25um51345g_test.v
 
 export PYTHONPATH := $(shell pwd)/..:$(shell pwd):$(PYTHONPATH)
 export COCOTB_HDL_TIMEUNIT
 export COCOTB_HDL_TIMEPRECISION
 
 # The SFDP ROM is an include next to the model.
-COMPILE_ARGS += -I$(shell pwd)/../verilog/devices
+COMPILE_ARGS += -I$(VERILOG_DIR)/devices
 
 include $(shell cocotb-config --makefiles)/Makefile.sim
 

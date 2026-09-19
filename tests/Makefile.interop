@@ -2,6 +2,12 @@
 #
 #   make -f Makefile.interop
 
+VERILOG_DIR := $(shell PYTHONPATH=$(shell pwd)/.. python3 -c \
+    "import cocotbext.ospi as o; print(o.verilog_dir())" 2>/dev/null)
+ifeq ($(VERILOG_DIR),)
+VERILOG_DIR := $(shell pwd)/../cocotbext/ospi/verilog
+endif
+
 TOPLEVEL_LANG ?= verilog
 SIM ?= icarus
 

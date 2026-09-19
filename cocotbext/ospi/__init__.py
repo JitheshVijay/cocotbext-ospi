@@ -1,3 +1,24 @@
+"""OSPI flash verification for cocotb."""
+
+from pathlib import Path
+
+
+def verilog_dir() -> Path:
+    """Directory holding this package's Verilog models.
+
+    The models ship inside the package, so a testbench can point at them
+    without vendoring a copy:
+
+        VERILOG_DIR := $(shell python3 -c \
+            "import cocotbext.ospi as o; print(o.verilog_dir())")
+        VERILOG_SOURCES = $(VERILOG_DIR)/devices/mx25um51345g.v
+
+    Subdirectories: ``devices/`` for the part models and their generated
+    SFDP includes, ``controller/`` for the example controller DUT.
+    """
+    return Path(__file__).parent / "verilog"
+
+
 from .ospi_bus import OspiBus
 from .ospi_config import OspiConfig, lanes_for_mode
 from .ospi_flash import (

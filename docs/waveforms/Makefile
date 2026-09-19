@@ -3,6 +3,12 @@
 #   make        # capture.vcd
 #   make svg    # capture.vcd -> *.svg  (needs npx wavedrom-cli)
 
+VERILOG_DIR := $(shell PYTHONPATH=$(shell pwd)/../.. python3 -c \
+    "import cocotbext.ospi as o; print(o.verilog_dir())" 2>/dev/null)
+ifeq ($(VERILOG_DIR),)
+VERILOG_DIR := $(shell pwd)/../../cocotbext/ospi/verilog
+endif
+
 TOPLEVEL_LANG ?= verilog
 SIM ?= icarus
 
@@ -14,8 +20,8 @@ SIM_BUILD = sim_build_waves
 TOPLEVEL = ospi_flash_test
 MODULE   = capture
 
-VERILOG_SOURCES  = $(shell pwd)/../../verilog/ospi_flash.v
-VERILOG_SOURCES += $(shell pwd)/../../verilog/ospi_flash_test.v
+VERILOG_SOURCES  = $(VERILOG_DIR)/ospi_flash.v
+VERILOG_SOURCES += $(VERILOG_DIR)/ospi_flash_test.v
 VERILOG_SOURCES += vcd_dump.v
 COMPILE_ARGS += -s vcd_dump
 
