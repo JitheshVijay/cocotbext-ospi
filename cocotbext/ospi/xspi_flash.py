@@ -271,3 +271,39 @@ class XspiFlash:
         # a typical BFPT as well.
         image = await self.read_sfdp(256)
         return parse_sfdp(image)
+
+    async def configure_from_sfdp(self, mhz: int = 200) -> SfdpInfo:
+        """Set the driver up from the part's own SFDP, not from its profile.
+
+        This is what a real controller does with a flash it has no entry
+        for: read the xSPI Profile 1.0 table, take the octal DTR read opcode
+        and the dummy cycle count for the speed it runs at, and use those.
+
+        Returns the parsed SFDP so a caller can see what it learnt.
+        """
+        info = await self.discover()
+
+        if not info.supports_octal_dtr:
+            raise ValueError(
+                f"{self.profile.name} advertises no xSPI Profile 1.0 table, "
+                f"so octal DTR cannot be configured from SFDP"
+            )
+
+        dummy = info.dummy_for_frequency(mhz)
+        if dummy is None:
+            raise ValueError(
+                f"no dummy cycle count advertised at or below {mhz} MHz"
+            )
+
+        # Point the octal read at the advertised opcode and dummy count.
+        name = "8DTRD" if "8DTRD" in self.profile.ops else "8READ"
+        op = self.profile.ops[name]
+        op.opcode = info.octal_dtr_read_opcode
+        op.opi_dummy = dummy
+
+        # RDSR's shape in octal is advertised too, and differs by vendor.
+        rdsr = self.profile.ops["RDSR"]
+        rdsr.opi_dummy = info.rdsr_dummy
+        rdsr.opi_addr_bytes = info.rdsr_addr_bytes
+
+        return info

@@ -295,3 +295,86 @@ async def test_sfdp_survives_the_mode_switch(dut):
 
     assert in_spi == in_octal, "SFDP differs between SPI and octal"
     assert in_spi[:4] == b"SFDP"
+
+
+# ── xSPI Profile 1.0 (JESD251) ───────────────────────────────────────
+
+@cocotb.test()
+async def test_profile1_is_advertised(dut):
+    """The part carries an xSPI Profile 1.0 table describing its octal DTR."""
+    flash = await setup(dut)
+    info = await flash.discover()
+
+    assert info.supports_octal_dtr
+    assert [hex(h.param_id) for h in info.headers] == ["0xff00", "0xff05"]
+    # 8DTRD is the DTR octal read.
+    assert info.octal_dtr_read_opcode == 0xEE
+    # RDSR grows a 4-byte address and 4 dummy cycles in OPI.
+    assert info.rdsr_dummy == 4
+    assert info.rdsr_addr_bytes == 4
+
+
+@cocotb.test()
+async def test_profile1_matches_the_profile_we_ship(dut):
+    """What the part advertises agrees with the profile we drive it by.
+
+    If these ever disagree, one of them is wrong -- and a controller that
+    trusted SFDP would be reading with the wrong opcode or dummy count.
+    """
+    flash = await setup(dut)
+    info = await flash.discover()
+
+    assert info.octal_dtr_read_opcode == MX25UM51345G.ops["8DTRD"].opcode
+    rdsr = MX25UM51345G.ops["RDSR"]
+    assert info.rdsr_dummy == rdsr.opi_dummy
+    assert info.rdsr_addr_bytes == rdsr.opi_addr_bytes
+
+
+@cocotb.test()
+async def test_configure_octal_dtr_purely_from_sfdp(dut):
+    """Drive the part using only what it told us about itself.
+
+    No profile constants: the opcode and dummy count come from the Profile
+    1.0 table, which is how a controller handles a flash it has no entry
+    for. The read has to actually work afterwards.
+    """
+    flash = await setup(dut)
+    info = await flash.configure_from_sfdp(mhz=200)
+    assert info.octal_dtr_dummy[200] == 20
+
+    await flash.enter_octal(PROTO_8D_8D_8D)
+    await flash.program(0x00000400, [0x5E, 0xED])
+    assert await flash.read(0x00000400, 2) == [0x5E, 0xED]
+
+
+@cocotb.test()
+async def test_advertised_dummy_cycles_really_work(dut):
+    """Each frequency bin's advertised count is one the part accepts.
+
+    The Profile table quotes a count per speed; if any of them were wrong a
+    controller running at that speed would read garbage. Walk them all,
+    program CR2 to match, and check the data still comes back.
+    """
+    flash = await setup(dut)
+    info = await flash.discover()
+    await flash.enter_octal(PROTO_8D_8D_8D)
+    await flash.program(0x00000500, [0xAB, 0xCD])
+
+    # CR2 DC[2:0] -> cycle count, from the datasheet table.
+    bits_for_cycles = {cycles: bits for bits, cycles in DUMMY_CYCLES.items()}
+
+    for mhz in sorted(info.octal_dtr_dummy, reverse=True):
+        cycles = info.octal_dtr_dummy[mhz]
+        assert cycles in bits_for_cycles, (
+            f"{mhz} MHz advertises {cycles} dummy cycles, which CR2 cannot "
+            f"express (DC table has {sorted(bits_for_cycles)})"
+        )
+        await flash.write_register(CR2_DUMMY, bits_for_cycles[cycles])
+        MX25UM51345G.ops["8DTRD"].opi_dummy = cycles
+
+        got = await flash.read(0x00000500, 2)
+        assert got == [0xAB, 0xCD], f"{mhz} MHz / {cycles} dummy: got {got}"
+
+    # Restore both sides.
+    await flash.write_register(CR2_DUMMY, 0b000)
+    MX25UM51345G.ops["8DTRD"].opi_dummy = DUMMY_CYCLES[0b000]

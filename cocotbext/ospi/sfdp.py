@@ -28,6 +28,12 @@ from typing import Dict, List, Optional
 SFDP_SIGNATURE = 0x50444653   # "SFDP" little-endian
 
 BFPT_ID = 0xFF00
+PROFILE1_ID = 0xFF05   # xSPI Profile 1.0 (JESD251)
+
+# Frequency bins the xSPI Profile 1.0 table quotes dummy cycles for. A part
+# lists what each speed needs; a controller picks the bin it runs at, or the
+# fastest it can find, so it is never short of dummy cycles.
+PROFILE1_FREQUENCIES = (200, 166, 133, 100)
 
 # Address-byte encoding, BFPT dword 1 bits [18:17].
 ADDR_3_ONLY = 0b00
@@ -42,6 +48,45 @@ ADDR_BYTES_NAME = {
 
 
 # ── building ─────────────────────────────────────────────────────────
+
+def build_profile1(fast_read_opcode: int, dummy_by_mhz: Dict[int, int],
+                   rdsr_dummy: int = 4, rdsr_addr_bytes: int = 0,
+                   dwords: int = 5) -> List[int]:
+    """Build an xSPI Profile 1.0 table (JESD251).
+
+    This is how a part advertises its 8D-8D-8D capability: which opcode does
+    a fast read, how many dummy cycles it needs at each frequency, and the
+    shape RDSR takes in octal -- all things a controller would otherwise
+    have to be told.
+
+    ``rdsr_dummy`` is 4 or 8; ``rdsr_addr_bytes`` is 0 or 4. Both are single
+    bits in the table, so no other value can be expressed.
+    """
+    if rdsr_dummy not in (4, 8):
+        raise ValueError("rdsr_dummy is a single bit: 4 or 8 cycles only")
+    if rdsr_addr_bytes not in (0, 4):
+        raise ValueError("rdsr_addr_bytes is a single bit: 0 or 4 only")
+
+    table = [0x00000000] * dwords
+
+    dw1 = (fast_read_opcode & 0xFF) << 8
+    if rdsr_dummy == 8:
+        dw1 |= 1 << 28
+    if rdsr_addr_bytes == 4:
+        dw1 |= 1 << 29
+    table[0] = dw1
+
+    # 200 MHz lives in dword 4; the slower three share dword 5.
+    if dwords >= 4:
+        table[3] = (dummy_by_mhz.get(200, 0) & 0x1F) << 7
+    if dwords >= 5:
+        table[4] = (((dummy_by_mhz.get(166, 0) & 0x1F) << 27) |
+                    ((dummy_by_mhz.get(133, 0) & 0x1F) << 17) |
+                    ((dummy_by_mhz.get(100, 0) & 0x1F) << 7))
+
+    return table
+
+
 
 def build_bfpt(density_bits: int, address_bytes: int = ADDR_4_ONLY,
                dtr: bool = False, page_size: int = 256,
@@ -137,6 +182,29 @@ class SfdpInfo:
     page_size: Optional[int] = None
     erase_types: List[tuple] = field(default_factory=list)
 
+    # Decoded from the xSPI Profile 1.0 table, when the part carries one.
+    profile1: Optional[List[int]] = None
+    octal_dtr_read_opcode: Optional[int] = None
+    octal_dtr_dummy: Dict[int, int] = field(default_factory=dict)
+    rdsr_dummy: Optional[int] = None
+    rdsr_addr_bytes: Optional[int] = None
+
+    @property
+    def supports_octal_dtr(self) -> bool:
+        """True when the part advertises 8D-8D-8D via Profile 1.0."""
+        return self.octal_dtr_read_opcode is not None
+
+    def dummy_for_frequency(self, mhz: int) -> Optional[int]:
+        """Dummy cycles needed at ``mhz``, or the fastest bin at or below it.
+
+        A controller running slower than a listed bin can always use that
+        bin's count -- more dummy cycles than needed is safe, fewer is not.
+        """
+        for freq in sorted(self.octal_dtr_dummy, reverse=True):
+            if freq <= mhz and self.octal_dtr_dummy[freq]:
+                return self.octal_dtr_dummy[freq]
+        return None
+
     @property
     def address_bytes_name(self) -> str:
         return ADDR_BYTES_NAME.get(self.address_bytes, "unknown")
@@ -179,13 +247,19 @@ def parse_sfdp(read) -> SfdpInfo:
         )
 
     for head in info.headers:
-        if head.param_id != BFPT_ID:
-            continue
         raw = bytes(read[head.pointer:head.pointer + head.dwords * 4])
         if len(raw) < head.dwords * 4:
-            raise SfdpError("BFPT runs past the image")
-        info.bfpt = list(struct.unpack(f"<{head.dwords}I", raw))
-        _decode_bfpt(info)
+            raise SfdpError(
+                f"table {head.param_id:#06x} runs past the image"
+            )
+        dwords = list(struct.unpack(f"<{head.dwords}I", raw))
+
+        if head.param_id == BFPT_ID:
+            info.bfpt = dwords
+            _decode_bfpt(info)
+        elif head.param_id == PROFILE1_ID:
+            info.profile1 = dwords
+            _decode_profile1(info)
 
     return info
 
@@ -215,3 +289,20 @@ def _decode_bfpt(info: SfdpInfo):
         shift = (bfpt[10] >> 4) & 0xF
         if shift:
             info.page_size = 1 << shift
+
+
+def _decode_profile1(info: SfdpInfo):
+    dwords = info.profile1
+    dw1 = dwords[0]
+
+    info.octal_dtr_read_opcode = (dw1 >> 8) & 0xFF
+    info.rdsr_dummy = 8 if dw1 & (1 << 28) else 4
+    info.rdsr_addr_bytes = 4 if dw1 & (1 << 29) else 0
+
+    if len(dwords) >= 4:
+        info.octal_dtr_dummy[200] = (dwords[3] >> 7) & 0x1F
+    if len(dwords) >= 5:
+        dw5 = dwords[4]
+        info.octal_dtr_dummy[166] = (dw5 >> 27) & 0x1F
+        info.octal_dtr_dummy[133] = (dw5 >> 17) & 0x1F
+        info.octal_dtr_dummy[100] = (dw5 >> 7) & 0x1F

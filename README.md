@@ -187,6 +187,26 @@ dummy cycles in SPI, 4 and 20 in OPI — so discovery has to know which mode
 it is in. Both profiles carry both shapes, and a test reads the same table
 each way.
 
+Both parts also carry an **xSPI Profile 1.0 table** (JESD251, id `0xFF05`),
+which is how a part advertises its octal DTR capability rather than being
+told: the fast-read opcode, the dummy cycles needed at each frequency, and
+the shape `RDSR` takes in octal.
+
+```python
+info = await flash.configure_from_sfdp(mhz=200)
+# reads Profile 1.0 and points the driver's octal read at the advertised
+# opcode and dummy count -- no profile constants involved
+```
+
+That the two parts disagree here is the point: Macronix `RDSR` takes a
+4-byte address and 4 dummy cycles in octal, Micron's takes none and 8. A
+controller hardcoded for one misreads the other, which is what Profile 1.0
+exists to prevent. Each part has a test asserting its own shape and the
+other's.
+
+The tests also check the table is not lying: every advertised dummy count is
+programmed into CR2 and the read has to still work.
+
 The tables are built by `cocotbext/ospi/sfdp.py` and emitted into the models
 by `verilog/devices/generate_sfdp.py`. Defining them once and generating the
 Verilog is what stops the model and the parser drifting apart — and the
@@ -207,14 +227,13 @@ quietly depend on whatever mode the previous one left behind.
 ### What is not modelled
 
 DQS, the flag status register, security and lock registers, suspend/resume,
-and SFDP tables beyond the BFPT (no xSPI Profile 1.0 table, no 4-byte
-address instruction table). The arrays are a small window rather than the
-full 64 MB so simulations stay fast; capacity is reported honestly in both
-the JEDEC ID and SFDP.
+and the 4-byte address instruction table (id `0xFF84`). The arrays are a
+small window rather than the full 64 MB so simulations stay fast; capacity
+is reported honestly in both the JEDEC ID and SFDP.
 
 ```
-make -C tests -f Makefile.mx25    # Macronix, 18 tests
-make -C tests -f Makefile.mt35    # Micron, 15 tests
+make -C tests -f Makefile.mx25    # Macronix, 22 tests
+make -C tests -f Makefile.mt35    # Micron, 19 tests
 ```
 
 ## Bus signals

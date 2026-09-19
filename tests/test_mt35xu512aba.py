@@ -231,3 +231,61 @@ async def test_software_reset_returns_to_extended_spi(dut):
     assert flash.protocol == PROTO_1S_1S_1S
     assert await flash.read_id() == [0x2C, 0x5B, 0x1A]
     assert await flash.read_register(CFR0V) == CFR0V_EXT_SPI
+
+
+# ── xSPI Profile 1.0 (JESD251) ───────────────────────────────────────
+
+@cocotb.test()
+async def test_profile1_is_advertised(dut):
+    """The part carries an xSPI Profile 1.0 table describing its octal DTR."""
+    flash = await setup(dut)
+    info = await flash.discover()
+
+    assert info.supports_octal_dtr
+    assert [hex(h.param_id) for h in info.headers] == ["0xff00", "0xff05"]
+    assert info.octal_dtr_read_opcode == 0xFD
+    # Micron's RDSR takes no address bytes but 8 dummy cycles -- the exact
+    # opposite shape to the Macronix part, and both are advertised.
+    assert info.rdsr_dummy == 8
+    assert info.rdsr_addr_bytes == 0
+
+
+@cocotb.test()
+async def test_profile1_matches_the_profile_we_ship(dut):
+    """What the part advertises agrees with the profile we drive it by."""
+    flash = await setup(dut)
+    info = await flash.discover()
+
+    assert info.octal_dtr_read_opcode == MT35XU512ABA.ops["8READ"].opcode
+    rdsr = MT35XU512ABA.ops["RDSR"]
+    assert info.rdsr_dummy == rdsr.opi_dummy
+    assert info.rdsr_addr_bytes == (rdsr.opi_addr_bytes or 0)
+
+
+@cocotb.test()
+async def test_configure_octal_dtr_purely_from_sfdp(dut):
+    """Drive the part using only what it told us about itself."""
+    flash = await setup(dut)
+    info = await flash.configure_from_sfdp(mhz=200)
+    assert info.octal_dtr_dummy[200] == OCTAL_DTR_DUMMY
+
+    await flash.enter_octal()
+    await flash.program(0x00000400, [0x5E, 0xED])
+    assert await flash.read(0x00000400, 2) == [0x5E, 0xED]
+
+
+@cocotb.test()
+async def test_the_two_vendors_advertise_different_rdsr_shapes(dut):
+    """Reading SFDP is what tells the two parts apart.
+
+    Macronix RDSR takes a 4-byte address and 4 dummy cycles in octal;
+    Micron's takes none and 8. A controller hardcoded for one reads the
+    wrong thing on the other, which is exactly what Profile 1.0 exists to
+    prevent.
+    """
+    flash = await setup(dut)
+    info = await flash.discover()
+
+    assert (info.rdsr_dummy, info.rdsr_addr_bytes) == (8, 0)
+    mx_rdsr = MX25UM51345G.ops["RDSR"]
+    assert (mx_rdsr.opi_dummy, mx_rdsr.opi_addr_bytes) == (4, 4)

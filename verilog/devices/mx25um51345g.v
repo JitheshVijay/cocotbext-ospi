@@ -88,6 +88,7 @@ module mx25um51345g #(
     reg [2:0]  cr2_dc;        // CR2[0x00000300], DC[2:0]
     reg        wel, wip;
     reg        rst_enabled;   // RSTEN must immediately precede RST
+    reg        was_rst_enabled;
 
     reg [2:0]  phase;
     reg [7:0]  shreg;
@@ -130,6 +131,7 @@ module mx25um51345g #(
         wel       = 1'b0;
         wip       = 1'b0;
         rst_enabled = 1'b0;
+        was_rst_enabled = 1'b0;
         phase     = P_CMD;
         shreg     = 8'h00;
         bitcount  = 0;
@@ -296,22 +298,23 @@ module mx25um51345g #(
     // Decide what follows the command (and extension) bytes.
     task start_body;
         begin
+            // RSTEN arms a reset for the *next* command only. Anything else
+            // clears the arming, so a stray RST cannot reset the part
+            // mid-operation.
+            was_rst_enabled = rst_enabled;
+            rst_enabled = (opcode == OP_RSTEN);
             case (opcode)
                 OP_WREN: begin if (!wip) wel = 1'b1; phase = P_DEAD; end
-                OP_RSTEN: begin rst_enabled = 1'b1; phase = P_DEAD; end
+                OP_RSTEN: phase = P_DEAD;
                 OP_RST: begin
-                    // Only honoured directly after RSTEN, as the part
-                    // requires; any other command in between cancels it.
-                    if (rst_enabled) begin
+                    if (was_rst_enabled) begin
                         cr2_mode = MODE_SPI;
                         wel = 1'b0;
                     end
-                    rst_enabled = 1'b0;
                     phase = P_DEAD;
                 end
                 OP_WRDI: begin wel = 1'b0; phase = P_DEAD; end
                 default: begin
-                    rst_enabled = 1'b0;
                     addr = 32'h0;
                     if (addr_bytes_for(opcode) > 0) begin
                         phase = P_ADDR;
