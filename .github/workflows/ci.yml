@@ -32,6 +32,11 @@ jobs:
         run: make -C tests
 
       # An independently written model (PicoSoC spiflash.v), which is what
-      # shows the driver speaks real QSPI rather than agreeing with itself.
+      # shows the driver speaks real SPI flash protocol rather than agreeing
+      # with itself.
       - name: Interop tests
         run: make -C tests -f Makefile.interop
+
+      # Real device models, built from datasheets.
+      - name: Macronix MX25UM51345G
+        run: make -C tests -f Makefile.mx25

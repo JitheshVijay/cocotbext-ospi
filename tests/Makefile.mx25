@@ -1,0 +1,26 @@
+# Macronix MX25UM51345G device model.
+#
+#   make -f Makefile.mx25
+
+TOPLEVEL_LANG ?= verilog
+SIM ?= icarus
+
+COCOTB_HDL_TIMEUNIT = 1ns
+COCOTB_HDL_TIMEPRECISION = 1ps
+
+SIM_BUILD = sim_build_mx25
+
+TOPLEVEL = mx25um51345g_test
+MODULE   = test_mx25um51345g
+
+VERILOG_SOURCES  = $(shell pwd)/../verilog/devices/mx25um51345g.v
+VERILOG_SOURCES += $(shell pwd)/../verilog/devices/mx25um51345g_test.v
+
+export PYTHONPATH := $(shell pwd)/..:$(shell pwd):$(PYTHONPATH)
+export COCOTB_HDL_TIMEUNIT
+export COCOTB_HDL_TIMEPRECISION
+
+include $(shell cocotb-config --makefiles)/Makefile.sim
+
+clean::
+	@rm -rf $(SIM_BUILD) results.xml
