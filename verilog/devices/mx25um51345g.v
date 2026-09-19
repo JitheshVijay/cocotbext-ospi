@@ -54,7 +54,14 @@ module mx25um51345g #(
                      OP_RSTEN  = 8'h66,
                      OP_RST    = 8'h99,
                      OP_PP4B   = 8'h12,
-                     OP_SE4B   = 8'h21;
+                     OP_SE4B   = 8'h21,
+                     OP_RDSCUR = 8'h2B,   // read security register
+                     OP_WRSCUR = 8'h2F,   // write security register
+                     OP_WPSEL  = 8'h68,   // switch to advanced protection
+                     OP_WRDPB  = 8'hE1,   // write dynamic protection bit
+                     OP_RDDPB  = 8'hE0,   // read dynamic protection bit
+                     OP_SUSPEND = 8'hB0,
+                     OP_RESUME  = 8'h30;
 
     // CR2 addresses.
     localparam [31:0] CR2_MODE  = 32'h00000000,
@@ -90,6 +97,28 @@ module mx25um51345g #(
     reg        rst_enabled;   // RSTEN must immediately precede RST
     reg        was_rst_enabled;
 
+    // Security register (RDSCUR). Datasheet Table 5:
+    //   bit7 WPSEL  bit6 E_FAIL  bit5 P_FAIL  bit4 reserved
+    //   bit3 ESB    bit2 PSB     bit1 LDSO    bit0 secured-OTP indicator
+    reg        wpsel;         // 0 = BP protection, 1 = advanced sector protection
+    reg        e_fail, p_fail;
+    reg        esb, psb;      // erase / program suspended
+    reg        ldso;
+
+    // Dynamic protection bits, one per sector. Volatile, and only consulted
+    // once WPSEL has switched the part to advanced sector protection.
+    reg        dpb [0:(MEM_DEPTH/SECTOR_SIZE)-1];
+
+    // A program or erase in flight. Held as remaining nanoseconds so a
+    // suspend can genuinely pause it rather than the operation completing
+    // instantly and suspend becoming a no-op.
+    reg        op_active;
+    reg        op_is_erase;
+    integer    op_remaining;
+    reg [31:0] op_addr;
+    reg [7:0]  op_data [0:PAGE_SIZE-1];
+    integer    op_len;
+
     reg [2:0]  phase;
     reg [7:0]  shreg;
     integer    bitcount;
@@ -99,9 +128,6 @@ module mx25um51345g #(
     reg [31:0] addr;
     reg [7:0]  outbyte;
 
-    reg [7:0]  pp_data [0:PAGE_SIZE-1];
-    integer    pp_count;
-    reg [31:0] pp_addr;
 
     reg [31:0] pending_cr2_addr;
 
@@ -132,11 +158,21 @@ module mx25um51345g #(
         wip       = 1'b0;
         rst_enabled = 1'b0;
         was_rst_enabled = 1'b0;
+        wpsel     = 1'b0;
+        e_fail    = 1'b0;
+        p_fail    = 1'b0;
+        esb       = 1'b0;
+        psb       = 1'b0;
+        ldso      = 1'b0;
+        op_active = 1'b0;
+        op_is_erase = 1'b0;
+        op_remaining = 0;
+        op_len    = 0;
+        for (i = 0; i < MEM_DEPTH/SECTOR_SIZE; i = i + 1) dpb[i] = 1'b0;
         phase     = P_CMD;
         shreg     = 8'h00;
         bitcount  = 0;
         bytecount = 0;
-        pp_count  = 0;
         driving   = 1'b0;
         lanes     = 1;
         dtr       = 1'b0;
@@ -162,13 +198,36 @@ module mx25um51345g #(
     assign io[7] = (driving_d && lanes == 8) ? dout_d[7] : 1'bz;
 
     wire [7:0] status = {6'b0, wel, wip};
+    wire [7:0] security = {wpsel, e_fail, p_fail, 1'b0, esb, psb, ldso, 1'b0};
+    wire       suspended = esb | psb;
+
+    // Datasheet Table 7, "Acceptable Commands During Suspend". Notably PP
+    // and SE are absent: this part cannot program during an erase suspend.
+    function allowed_while_suspended;
+        input [7:0] op;
+        case (op)
+            OP_READ4B, OP_8READ, OP_8DTRD, OP_RDSFDP, OP_RDID,
+            OP_WREN, OP_WRDI, OP_RESUME, OP_RDDPB,
+            OP_RDCR2, OP_WRCR2, OP_RDSR, OP_RDSCUR,
+            OP_RSTEN, OP_RST: allowed_while_suspended = 1'b1;
+            default: allowed_while_suspended = 1'b0;
+        endcase
+    endfunction
+
+    // A sector is protected only in advanced mode, and only if its DPB is set.
+    function sector_protected;
+        input [31:0] a;
+        sector_protected = wpsel && dpb[(a % MEM_DEPTH) / SECTOR_SIZE];
+    endfunction
 
     // ── per-command shape ────────────────────────────────────────────
     function integer addr_bytes_for;
         input [7:0] op;
         case (op)
             OP_RDCR2, OP_WRCR2, OP_READ4B, OP_8READ, OP_8DTRD,
-            OP_PP4B, OP_SE4B: addr_bytes_for = 4;
+            OP_PP4B, OP_SE4B, OP_WRDPB, OP_RDDPB: addr_bytes_for = 4;
+            // In OPI even a register read takes an address phase.
+            OP_RDSCUR: addr_bytes_for = in_opi ? 4 : 0;
             // RDSFDP takes 3 address bytes in SPI and 4 in OPI.
             OP_RDSFDP: addr_bytes_for = in_opi ? 4 : 3;
             // In octal these gain an address phase they do not have in SPI.
@@ -185,7 +244,8 @@ module mx25um51345g #(
             // 8 dummy cycles in SPI, 20 in OPI, per the command tables.
             OP_RDSFDP: dummy_for = in_opi ? 20 : 8;
             // Register reads need four dummy cycles once in OPI.
-            OP_RDSR, OP_RDID, OP_RDCR2: dummy_for = in_opi ? 4 : 0;
+            OP_RDSR, OP_RDID, OP_RDCR2, OP_RDSCUR,
+            OP_RDDPB: dummy_for = in_opi ? 4 : 0;
             default: dummy_for = 0;
         endcase
     endfunction
@@ -194,7 +254,7 @@ module mx25um51345g #(
         input [7:0] op;
         case (op)
             OP_RDID, OP_RDSR, OP_RDCR2, OP_READ4B, OP_8READ,
-            OP_8DTRD, OP_RDSFDP: is_read = 1'b1;
+            OP_8DTRD, OP_RDSFDP, OP_RDSCUR, OP_RDDPB: is_read = 1'b1;
             default: is_read = 1'b0;
         endcase
     endfunction
@@ -205,6 +265,8 @@ module mx25um51345g #(
             case (opcode)
                 OP_RDID:  outbyte = ID0;
                 OP_RDSR:  outbyte = status;
+                OP_RDSCUR: outbyte = security;
+                OP_RDDPB: outbyte = dpb[(addr % MEM_DEPTH) / SECTOR_SIZE] ? 8'hFF : 8'h00;
                 OP_RDCR2: begin
                     case (addr)
                         CR2_MODE:  outbyte = cr2_mode;
@@ -225,7 +287,9 @@ module mx25um51345g #(
             case (opcode)
                 OP_RDID:  outbyte = (bytecount == 1) ? ID1 :
                                     (bytecount == 2) ? ID2 : 8'h00;
-                OP_RDSR:  outbyte = status;          // repeats while clocked
+                OP_RDSR:  outbyte = status;
+                OP_RDSCUR: outbyte = security;
+                OP_RDDPB: outbyte = dpb[(addr % MEM_DEPTH) / SECTOR_SIZE] ? 8'hFF : 8'h00;          // repeats while clocked
                 OP_RDCR2: outbyte = outbyte;         // same register repeats
                 OP_READ4B, OP_8READ, OP_8DTRD: begin
                     addr = addr + 1;
@@ -283,10 +347,17 @@ module mx25um51345g #(
                         endcase
                         phase = P_DEAD;      // one data byte only
                     end else if (opcode == OP_PP4B) begin
-                        if (pp_count < PAGE_SIZE) begin
-                            pp_data[pp_count] = shreg;
-                            pp_count = pp_count + 1;
+                        if (op_len < PAGE_SIZE) begin
+                            op_data[op_len] = shreg;
+                            op_len = op_len + 1;
                         end
+                    end else if (opcode == OP_WRSCUR) begin
+                        // Only LDSO is customer-writable, and it is one-way.
+                        if (shreg[1]) ldso = 1'b1;
+                        phase = P_DEAD;
+                    end else if (opcode == OP_WRDPB) begin
+                        dpb[(addr % MEM_DEPTH) / SECTOR_SIZE] = (shreg != 8'h00);
+                        phase = P_DEAD;
                     end
                 end
 
@@ -303,13 +374,43 @@ module mx25um51345g #(
             // mid-operation.
             was_rst_enabled = rst_enabled;
             rst_enabled = (opcode == OP_RSTEN);
+            // Datasheet Table 7 lists what a suspended part accepts. Anything
+            // else is rejected -- a controller that programs during an erase
+            // suspend on this part gets nothing, which is the bug this catches.
+            if (suspended && !allowed_while_suspended(opcode)) begin
+                phase = P_DEAD;
+            end else
             case (opcode)
                 OP_WREN: begin if (!wip) wel = 1'b1; phase = P_DEAD; end
+                OP_WPSEL: begin
+                    // One-way: advanced sector protection cannot be undone.
+                    if (wel) begin wpsel = 1'b1; wel = 1'b0; end
+                    phase = P_DEAD;
+                end
+                OP_SUSPEND: begin
+                    if (op_active && wip) begin
+                        if (op_is_erase) esb = 1'b1; else psb = 1'b1;
+                        wip = 1'b0;   // the part becomes ready for other work
+                    end
+                    phase = P_DEAD;
+                end
+                OP_RESUME: begin
+                    if (suspended) begin
+                        // Resume re-arms WEL and WIP, per section 10-29.
+                        esb = 1'b0; psb = 1'b0;
+                        wip = 1'b1; wel = 1'b1;
+                    end
+                    phase = P_DEAD;
+                end
                 OP_RSTEN: phase = P_DEAD;
                 OP_RST: begin
                     if (was_rst_enabled) begin
                         cr2_mode = MODE_SPI;
                         wel = 1'b0;
+                        esb = 1'b0; psb = 1'b0;
+                        e_fail = 1'b0; p_fail = 1'b0;
+                        op_active = 1'b0; op_remaining = 0;
+                        wip = 1'b0;
                     end
                     phase = P_DEAD;
                 end
@@ -337,12 +438,13 @@ module mx25um51345g #(
                 phase = P_DEAD;
             end else
             if (opcode == OP_PP4B) begin
-                pp_addr  = addr;
-                pp_count = 0;
-                phase    = P_WRITE;
+                op_addr = addr;
+                op_len  = 0;
+                phase   = P_WRITE;
             end else if (opcode == OP_SE4B) begin
                 phase = P_DEAD;              // acted on when CS rises
-            end else if (opcode == OP_WRCR2) begin
+            end else if (opcode == OP_WRCR2 || opcode == OP_WRSCUR ||
+                         opcode == OP_WRDPB) begin
                 pending_cr2_addr = addr;
                 phase = P_WRITE;
             end else if (is_read(opcode)) begin
@@ -356,24 +458,57 @@ module mx25um51345g #(
 
     // ── chip select ──────────────────────────────────────────────────
     integer p, base, s;
+
+    // Launch a program or erase when the transaction closes. The work is not
+    // done here -- it is handed to the timer below so that a suspend can
+    // actually pause it. Committing immediately would make suspend a no-op
+    // and hide the bugs it exists to expose.
     always @(posedge csb) begin
-        // Commit program and erase when the transaction closes.
-        if (opcode == OP_PP4B && wel && !wip && pp_count > 0) begin
-            wip = 1'b1;
-            wel = 1'b0;
-            for (p = 0; p < pp_count; p = p + 1) begin
-                // NOR programming clears bits; only an erase sets them.
-                base = (pp_addr + p) % MEM_DEPTH;
-                memory[base] = memory[base] & pp_data[p];
+        if (opcode == OP_PP4B && wel && !wip && !suspended && op_len > 0) begin
+            if (sector_protected(op_addr)) begin
+                // A protected region reports failure rather than silently
+                // doing nothing: P_FAIL is how a controller finds out.
+                p_fail = 1'b1;
+                wel    = 1'b0;
+            end else begin
+                wip = 1'b1; wel = 1'b0;
+                op_active = 1'b1; op_is_erase = 1'b0;
+                op_remaining = PROGRAM_NS;
             end
-            #(PROGRAM_NS) wip = 1'b0;
-        end else if (opcode == OP_SE4B && wel && !wip) begin
-            wip = 1'b1;
-            wel = 1'b0;
-            base = ((addr % MEM_DEPTH) / SECTOR_SIZE) * SECTOR_SIZE;
-            for (s = 0; s < SECTOR_SIZE; s = s + 1)
-                if (base + s < MEM_DEPTH) memory[base + s] = 8'hFF;
-            #(ERASE_NS) wip = 1'b0;
+        end else if (opcode == OP_SE4B && wel && !wip && !suspended) begin
+            if (sector_protected(addr)) begin
+                e_fail = 1'b1;
+                wel    = 1'b0;
+            end else begin
+                op_addr = addr;
+                wip = 1'b1; wel = 1'b0;
+                op_active = 1'b1; op_is_erase = 1'b1;
+                op_remaining = ERASE_NS;
+            end
+        end
+    end
+
+    // The operation's own clock. Ticks only while the part is neither
+    // suspended nor idle, so ESB/PSB genuinely hold the work off.
+    always begin
+        #1;
+        if (op_active && !suspended && op_remaining > 0) begin
+            op_remaining = op_remaining - 1;
+            if (op_remaining == 0) begin
+                if (op_is_erase) begin
+                    base = ((op_addr % MEM_DEPTH) / SECTOR_SIZE) * SECTOR_SIZE;
+                    for (s = 0; s < SECTOR_SIZE; s = s + 1)
+                        if (base + s < MEM_DEPTH) memory[base + s] = 8'hFF;
+                end else begin
+                    for (p = 0; p < op_len; p = p + 1) begin
+                        // NOR programming clears bits; only an erase sets them.
+                        base = (op_addr + p) % MEM_DEPTH;
+                        memory[base] = memory[base] & op_data[p];
+                    end
+                end
+                op_active = 1'b0;
+                wip = 1'b0;
+            end
         end
     end
 
@@ -387,10 +522,7 @@ module mx25um51345g #(
         // a WRCR2 that switches protocol takes effect on the *next* command.
         lanes     = in_opi ? 8 : 1;
         dtr       = in_dopi;
-        if (!csb) begin
-            opcode   = 8'h00;
-            pp_count = 0;
-        end
+        if (!csb) opcode = 8'h00;
     end
 
     // ── device drives while the clock is low ─────────────────────────

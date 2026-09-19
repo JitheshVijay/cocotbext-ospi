@@ -29,6 +29,13 @@ CFR0V_OCTAL_DTR = 0xE7
 CFR0V_EXT_SPI = 0xFF
 CFR1V_DEFAULT = 0x1F
 
+# Flag status register bits. READY is inverted relative to the status
+# register's WIP: 1 means idle here, where WIP 1 means busy.
+FSR_READY = 0x80
+FSR_E_ERR = 0x20
+FSR_P_ERR = 0x10
+FSR_PT_ERR = 0x02
+
 #: Dummy cycles Linux programs for 8D-8D-8D at the part's top speed.
 OCTAL_DTR_DUMMY = 20
 
@@ -70,6 +77,11 @@ MT35XU512ABA = DeviceProfile(
         "WRCR2": Op(0x81, addr_bytes=4, dummy=0),
         "RSTEN": Op(0x66),
         "RST":   Op(0x99),
+
+        # Flag status register. In DTR it takes the same address/dummy shape
+        # as RDSR, and must transfer an even number of bytes.
+        "RDFSR": Op(0x70, addr_bytes=0, dummy=0, opi_dummy=8),
+        "CLFSR": Op(0x50),
 
         "READ":  Op(0x13, addr_bytes=4, dummy=0),    # extended SPI
         "8READ": Op(0xFD, addr_bytes=4, opi_dummy=OCTAL_DTR_DUMMY),

@@ -22,7 +22,14 @@ module mt35xu512aba_test;
         end
     endgenerate
 
-    mt35xu512aba dut (
+    // A single-lane transaction is ~1.1 us, so the default 1 us program
+    // window closes before a second command can collide with it. Widen it
+    // so "issue a command while busy" is actually testable; it only affects
+    // how long simulated time runs, not behaviour.
+    mt35xu512aba #(
+        .PROGRAM_NS (20000),
+        .ERASE_NS   (40000)
+    ) dut (
         .clk (clk),
         .csb (csb),
         .io  (io)

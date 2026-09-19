@@ -11,6 +11,7 @@ from cocotb.clock import Clock
 from cocotbext.ospi.devices import (
     MT35XU512ABA, MX25UM51345G,
     CFR0V, CFR1V, CFR0V_OCTAL_DTR, CFR0V_EXT_SPI, OCTAL_DTR_DUMMY,
+    FSR_READY, FSR_E_ERR, FSR_P_ERR, FSR_PT_ERR,
     PROTO_1S_1S_1S, PROTO_8D_8D_8D,
 )
 from cocotbext.ospi.xspi_flash import XspiFlash, STATUS_WEL, STATUS_WIP
@@ -242,7 +243,9 @@ async def test_profile1_is_advertised(dut):
     info = await flash.discover()
 
     assert info.supports_octal_dtr
-    assert [hex(h.param_id) for h in info.headers] == ["0xff00", "0xff05"]
+    assert [hex(h.param_id) for h in info.headers] == [
+        "0xff00", "0xff05", "0xff84",
+    ]
     assert info.octal_dtr_read_opcode == 0xFD
     # Micron's RDSR takes no address bytes but 8 dummy cycles -- the exact
     # opposite shape to the Macronix part, and both are advertised.
@@ -289,3 +292,93 @@ async def test_the_two_vendors_advertise_different_rdsr_shapes(dut):
     assert (info.rdsr_dummy, info.rdsr_addr_bytes) == (8, 0)
     mx_rdsr = MX25UM51345G.ops["RDSR"]
     assert (mx_rdsr.opi_dummy, mx_rdsr.opi_addr_bytes) == (4, 4)
+
+
+# ── flag status register ─────────────────────────────────────────────
+
+@cocotb.test()
+async def test_flag_status_ready_polarity_is_inverted(dut):
+    """FSR READY is 1 when idle; the status register's WIP is 1 when busy.
+
+    Reading FSR as though it were the status register inverts the busy
+    check, so a controller either never waits or waits forever.
+    """
+    flash = await setup(dut)
+
+    fsr = await flash.read_flag_status()
+    assert fsr & FSR_READY, "idle part should report READY"
+    assert not await flash.read_status() & STATUS_WIP
+
+    await flash.program(0x00000010, [0x11, 0x22], wait=False)
+    assert not await flash.read_flag_status() & FSR_READY, \
+        "busy part should clear READY"
+    assert await flash.read_status() & STATUS_WIP
+
+    await flash.wait_ready()
+    assert await flash.read_flag_status() & FSR_READY
+
+
+@cocotb.test()
+async def test_flag_status_latches_a_program_error(dut):
+    """A program issued while busy latches P_ERR, and it stays latched.
+
+    This is what FSR gives you over WIP: WIP only says busy or idle, so a
+    write lost this way looks like success once WIP clears.
+    """
+    flash = await setup(dut)
+
+    await flash.program(0x00000020, [0x33, 0x44], wait=False)
+    # Second program while the first is still in flight.
+    await flash._transfer("PP", address=0x00000030, write=[0x55, 0x66])
+
+    await flash.wait_ready()
+    fsr = await flash.read_flag_status()
+    assert fsr & FSR_P_ERR, "no P_ERR after programming a busy part"
+    assert fsr & FSR_READY, "the part should be idle again"
+
+    # Still latched on a second read -- it is not read-to-clear.
+    assert await flash.read_flag_status() & FSR_P_ERR
+
+
+@cocotb.test()
+async def test_clear_flag_status_clears_the_error(dut):
+    """CLFSR is what clears the latched bits."""
+    flash = await setup(dut)
+
+    await flash.program(0x00000040, [0x77, 0x88], wait=False)
+    await flash._transfer("PP", address=0x00000050, write=[0x99, 0xAA])
+    await flash.wait_ready()
+    assert await flash.read_flag_status() & FSR_P_ERR
+
+    await flash.clear_flag_status()
+    fsr = await flash.read_flag_status()
+    assert not fsr & FSR_P_ERR
+    assert not fsr & (FSR_E_ERR | FSR_PT_ERR)
+
+
+@cocotb.test()
+async def test_erase_while_busy_latches_e_err_not_p_err(dut):
+    """The two error bits distinguish which kind of operation failed."""
+    flash = await setup(dut)
+    await flash.clear_flag_status()
+
+    await flash.erase_sector(0x00001000, wait=False)
+    await flash._transfer("SE", address=0x00002000)
+
+    await flash.wait_ready()
+    fsr = await flash.read_flag_status()
+    assert fsr & FSR_E_ERR, "no E_ERR after erasing a busy part"
+    assert not fsr & FSR_P_ERR, "an erase error must not set P_ERR"
+    await flash.clear_flag_status()
+
+
+@cocotb.test()
+async def test_flag_status_readable_in_octal_dtr(dut):
+    """FSR works in 8D-8D-8D, where it must transfer two bytes."""
+    flash = await setup(dut)
+    await flash.enter_octal()
+
+    assert await flash.read_flag_status() & FSR_READY
+    await flash.program(0x00000060, [0xBB, 0xCC])
+    assert await flash.read_flag_status() & FSR_READY
+    assert await flash.read(0x00000060, 2) == [0xBB, 0xCC]

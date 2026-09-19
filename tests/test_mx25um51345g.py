@@ -13,6 +13,10 @@ from cocotbext.ospi.devices import (
     MX25UM51345G, CR2_MODE, CR2_DUMMY, CR2_MODE_SOPI, CR2_MODE_SPI,
     DUMMY_CYCLES, PROTO_1S_1S_1S, PROTO_8S_8S_8S, PROTO_8D_8D_8D,
     CR2_MODE_DOPI,
+    SCUR_WPSEL, SCUR_E_FAIL, SCUR_P_FAIL, SCUR_ESB, SCUR_PSB,
+)
+from cocotbext.ospi.sfdp import (
+    FOURBAIT_READ, FOURBAIT_PP, FOURBAIT_READ_1_4_4,
 )
 from cocotbext.ospi.xspi_flash import XspiFlash, STATUS_WEL, STATUS_WIP
 
@@ -306,7 +310,9 @@ async def test_profile1_is_advertised(dut):
     info = await flash.discover()
 
     assert info.supports_octal_dtr
-    assert [hex(h.param_id) for h in info.headers] == ["0xff00", "0xff05"]
+    assert [hex(h.param_id) for h in info.headers] == [
+        "0xff00", "0xff05", "0xff84",
+    ]
     # 8DTRD is the DTR octal read.
     assert info.octal_dtr_read_opcode == 0xEE
     # RDSR grows a 4-byte address and 4 dummy cycles in OPI.
@@ -378,3 +384,213 @@ async def test_advertised_dummy_cycles_really_work(dut):
     # Restore both sides.
     await flash.write_register(CR2_DUMMY, 0b000)
     MX25UM51345G.ops["8DTRD"].opi_dummy = DUMMY_CYCLES[0b000]
+
+
+# ── security register and advanced sector protection ─────────────────
+
+@cocotb.test()
+async def test_security_register_defaults(dut):
+    """Out of reset nothing is failed, suspended or locked."""
+    flash = await setup(dut)
+    scur = await flash.read_security()
+
+    assert not scur & SCUR_WPSEL, "should start in BP protection mode"
+    assert not scur & (SCUR_E_FAIL | SCUR_P_FAIL)
+    assert not scur & (SCUR_ESB | SCUR_PSB)
+
+
+@cocotb.test()
+async def test_wpsel_switches_to_advanced_protection(dut):
+    """WPSEL sets the mode bit, and needs WEL like any other write."""
+    flash = await setup(dut)
+
+    # Without WEL it does nothing.
+    await flash._transfer("WPSEL")
+    assert not await flash.read_security() & SCUR_WPSEL
+
+    await flash.enable_advanced_protection()
+    assert await flash.read_security() & SCUR_WPSEL
+
+
+@cocotb.test()
+async def test_protected_sector_refuses_program_and_says_so(dut):
+    """A DPB-protected sector fails the program and reports P_FAIL.
+
+    Reporting matters more than refusing: a controller that only checks WIP
+    sees a clean completion and believes the write landed.
+    """
+    flash = await setup(dut)
+    await flash.enable_advanced_protection()
+    await flash.write_protection_bit(0x00000000, True)
+    assert await flash.read_protection_bit(0x00000000)
+
+    await flash.program(0x00000000, [0xA5], wait=False)
+    scur = await flash.read_security()
+
+    assert scur & SCUR_P_FAIL, "protected program did not set P_FAIL"
+    assert await flash.read_byte(0x00000000) == 0xFF, "protected sector changed"
+
+
+@cocotb.test()
+async def test_protected_sector_refuses_erase(dut):
+    """A protected sector fails the erase and reports E_FAIL."""
+    flash = await setup(dut)
+    await flash.program(0x00002000, [0x5A])
+    assert await flash.read_byte(0x00002000) == 0x5A
+
+    await flash.enable_advanced_protection()
+    await flash.write_protection_bit(0x00002000, True)
+
+    await flash.erase_sector(0x00002000, wait=False)
+    assert await flash.read_security() & SCUR_E_FAIL
+    assert await flash.read_byte(0x00002000) == 0x5A, "protected sector erased"
+
+
+@cocotb.test()
+async def test_clearing_protection_lets_the_write_through(dut):
+    """Dropping the DPB restores normal programming."""
+    flash = await setup(dut)
+    await flash.enable_advanced_protection()
+    await flash.write_protection_bit(0x00003000, True)
+
+    await flash.program(0x00003000, [0x11], wait=False)
+    assert await flash.read_byte(0x00003000) == 0xFF
+
+    await flash.write_protection_bit(0x00003000, False)
+    assert not await flash.read_protection_bit(0x00003000)
+
+    await flash.program(0x00003000, [0x11])
+    assert await flash.read_byte(0x00003000) == 0x11
+
+
+# ── program / erase suspend and resume ───────────────────────────────
+
+@cocotb.test()
+async def test_erase_suspend_and_resume(dut):
+    """Suspend stops an erase mid-flight; resume finishes it."""
+    flash = await setup(dut)
+    await flash.program(0x00004000, [0xC3])
+
+    # Start the erase but do not wait for it.
+    await flash.erase_sector(0x00004000, wait=False)
+    await flash.suspend()
+
+    scur = await flash.read_security()
+    assert scur & SCUR_ESB, "ESB not set after suspending an erase"
+    assert not await flash.read_status() & STATUS_WIP, \
+        "a suspended part should report ready"
+    # The erase has not finished, so the byte is still there.
+    assert await flash.read_byte(0x00004000) == 0xC3
+
+    await flash.resume()
+    assert not await flash.read_security() & SCUR_ESB
+    await flash.wait_ready()
+    assert await flash.read_byte(0x00004000) == 0xFF
+
+
+@cocotb.test()
+async def test_program_suspend_sets_psb_not_esb(dut):
+    """Suspending a program sets PSB; the two are distinguishable."""
+    flash = await setup(dut)
+
+    await flash.program(0x00005000, [0x3C], wait=False)
+    await flash.suspend()
+
+    scur = await flash.read_security()
+    assert scur & SCUR_PSB, "PSB not set after suspending a program"
+    assert not scur & SCUR_ESB, "a program suspend must not set ESB"
+
+    await flash.resume()
+    await flash.wait_ready()
+    assert await flash.read_byte(0x00005000) == 0x3C
+
+
+@cocotb.test()
+async def test_program_is_rejected_during_erase_suspend(dut):
+    """Datasheet Table 7: PP is not an acceptable command while suspended.
+
+    Some parts allow program-during-erase-suspend and some do not. This one
+    does not, and a controller written against a part that does would
+    silently lose the write.
+    """
+    flash = await setup(dut)
+    await flash.erase_sector(0x00006000, wait=False)
+    await flash.suspend()
+    assert await flash.read_security() & SCUR_ESB
+
+    await flash.program(0x00006000, [0x77], wait=False)
+    assert await flash.read_byte(0x00006000) == 0xFF, \
+        "page program was honoured during an erase suspend"
+
+    await flash.resume()
+    await flash.wait_ready()
+
+
+@cocotb.test()
+async def test_reads_are_allowed_during_suspend(dut):
+    """Reads and status polls are on Table 7's acceptable list."""
+    flash = await setup(dut)
+    await flash.program(0x00007000, [0xBE, 0xEF])
+
+    await flash.erase_sector(0x00007000, wait=False)
+    await flash.suspend()
+
+    assert await flash.read(0x00007000, 2) == [0xBE, 0xEF]
+    assert await flash.read_id() == [0xC2, 0x80, 0x3A]
+
+    await flash.resume()
+    await flash.wait_ready()
+    assert await flash.read(0x00007000, 2) == [0xFF, 0xFF]
+
+
+# ── 4-byte address instruction table ─────────────────────────────────
+
+@cocotb.test()
+async def test_4bait_advertises_four_byte_instructions(dut):
+    """The part says which instructions take a 4-byte address.
+
+    It is a 4-byte-only device, so this is not optional detail: without the
+    table a controller has to guess whether to convert 3-byte opcodes, and
+    guessing wrong reads the wrong address.
+    """
+    flash = await setup(dut)
+    info = await flash.discover()
+
+    assert info.fourbait is not None, "no 4BAIT table"
+    assert info.supports_4byte(FOURBAIT_READ)
+    assert info.supports_4byte(FOURBAIT_PP)
+    assert not info.supports_4byte(FOURBAIT_READ_1_4_4), \
+        "this part has no quad 1-4-4 read"
+
+
+@cocotb.test()
+async def test_4bait_erase_opcodes_match_the_bfpt(dut):
+    """The 4-byte erase opcodes agree with the BFPT's erase types.
+
+    Two tables describing the same thing is a chance for them to disagree;
+    a controller reading either must land on the same opcode.
+    """
+    flash = await setup(dut)
+    info = await flash.discover()
+
+    from_bfpt = sorted(op for _, op in info.erase_types)
+    from_4bait = sorted(info.fourbait_erase_opcodes)
+    assert from_bfpt == from_4bait == [0x21, 0xDC]
+
+
+@cocotb.test()
+async def test_4bait_opcodes_are_the_ones_that_work(dut):
+    """The advertised erase opcode actually erases.
+
+    Closes the loop: the table says 0x21, so drive 0x21 and check it does
+    what it claims.
+    """
+    flash = await setup(dut)
+    info = await flash.discover()
+    sector_erase = min(info.fourbait_erase_opcodes)
+    assert sector_erase == MX25UM51345G.ops["SE"].opcode
+
+    await flash.program(0x00008000, [0x42])
+    assert await flash.read_byte(0x00008000) == 0x42
+    await flash.erase_sector(0x00008000)
+    assert await flash.read_byte(0x00008000) == 0xFF

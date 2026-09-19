@@ -49,7 +49,9 @@ module mt35xu512aba #(
                      OP_SE4B    = 8'h21,
                      OP_RDSFDP  = 8'h5A,
                      OP_RSTEN   = 8'h66,
-                     OP_RST     = 8'h99;
+                     OP_RST     = 8'h99,
+                     OP_RDFSR   = 8'h70,   // read flag status register
+                     OP_CLFSR   = 8'h50;   // clear flag status register
 
     localparam [7:0] CFR0V_ADDR = 8'h00,
                      CFR1V_ADDR = 8'h01;
@@ -78,6 +80,13 @@ module mt35xu512aba #(
     reg        rst_enabled;   // RSTEN must immediately precede RST
     reg        was_rst_enabled;
 
+    // Flag Status Register. Bit polarity is the trap here: READY is 1 when
+    // the part is *idle*, the opposite of the Status Register's WIP. And
+    // unlike WIP, the error bits latch -- they say whether the last
+    // operation actually worked, which WIP alone can never tell you.
+    //   bit7 READY (0 = busy)  bit5 E_ERR  bit4 P_ERR  bit1 PT_ERR
+    reg        fsr_e_err, fsr_p_err, fsr_pt_err;
+
     reg [2:0]  phase;
     reg [7:0]  shreg;
     integer    bitcount;
@@ -90,6 +99,19 @@ module mt35xu512aba #(
 
     reg [7:0]  pp_data [0:PAGE_SIZE-1];
     integer    pp_count;
+
+    // A program or erase in flight, held as remaining nanoseconds. The work
+    // is launched on the chip-select edge and done by a timer. A blocking
+    // delay in that block would sit inside the always and miss every later
+    // chip-select edge, so the part would ignore commands while busy
+    // instead of reporting an error for them.
+    reg        op_active;
+    reg        op_is_erase;
+    integer    op_remaining;
+    reg [31:0] op_addr;
+    reg [7:0]  op_data [0:PAGE_SIZE-1];
+    integer    op_len;
+
     reg [31:0] pp_addr;
 
     reg        driving;
@@ -114,6 +136,13 @@ module mt35xu512aba #(
         wip       = 1'b0;
         rst_enabled = 1'b0;
         was_rst_enabled = 1'b0;
+        fsr_e_err  = 1'b0;
+        fsr_p_err  = 1'b0;
+        fsr_pt_err = 1'b0;
+        op_active  = 1'b0;
+        op_is_erase = 1'b0;
+        op_remaining = 0;
+        op_len     = 0;
         phase     = P_CMD;
         shreg     = 8'h00;
         bitcount  = 0;
@@ -143,6 +172,8 @@ module mt35xu512aba #(
     assign io[7] = (driving_d && lanes == 8) ? dout_d[7] : 1'bz;
 
     wire [7:0] status = {6'b0, wel, wip};
+    wire [7:0] flag_status = {~wip, 1'b0, fsr_e_err, fsr_p_err,
+                              2'b0, fsr_pt_err, 1'b0};
 
     function integer addr_bytes_for;
         input [7:0] op;
@@ -162,6 +193,8 @@ module mt35xu512aba #(
             OP_RD_REG: dummy_for = octal ? 8 : 0;  // Linux: rdsr_dummy = 8
             OP_RDSR:   dummy_for = octal ? 8 : 0;
             OP_RDID:   dummy_for = octal ? 8 : 0;
+            // Linux reads FSR with the same shape as RDSR in DTR.
+            OP_RDFSR:  dummy_for = octal ? 8 : 0;
             OP_RDSFDP: dummy_for = octal ? 20 : 8;
             default:   dummy_for = 0;
         endcase
@@ -171,7 +204,7 @@ module mt35xu512aba #(
         input [7:0] op;
         case (op)
             OP_RDID, OP_RDSR, OP_RD_REG, OP_READ4B, OP_DTR_RD,
-            OP_RDSFDP: is_read = 1'b1;
+            OP_RDSFDP, OP_RDFSR: is_read = 1'b1;
             default: is_read = 1'b0;
         endcase
     endfunction
@@ -181,6 +214,7 @@ module mt35xu512aba #(
             case (opcode)
                 OP_RDID: outbyte = ID0;
                 OP_RDSR: outbyte = status;
+                OP_RDFSR: outbyte = flag_status;
                 OP_RD_REG: begin
                     case (addr[7:0])
                         CFR0V_ADDR: outbyte = cfr0v;
@@ -201,6 +235,7 @@ module mt35xu512aba #(
                 OP_RDID: outbyte = (bytecount == 1) ? ID1 :
                                    (bytecount == 2) ? ID2 : 8'h00;
                 OP_RDSR: outbyte = status;
+                OP_RDFSR: outbyte = flag_status;
                 OP_RD_REG: outbyte = outbyte;
                 OP_READ4B, OP_DTR_RD: begin
                     addr = addr + 1;
@@ -224,11 +259,18 @@ module mt35xu512aba #(
             rst_enabled = (opcode == OP_RSTEN);
             case (opcode)
                 OP_WREN: begin if (!wip) wel = 1'b1; phase = P_DEAD; end
+                OP_CLFSR: begin
+                    // The error bits latch until explicitly cleared -- that
+                    // is the whole point of them.
+                    fsr_e_err = 1'b0; fsr_p_err = 1'b0; fsr_pt_err = 1'b0;
+                    phase = P_DEAD;
+                end
                 OP_RSTEN: phase = P_DEAD;
                 OP_RST: begin
                     if (was_rst_enabled) begin
                         cfr0v = CFR0V_EXT_SPI;
                         wel = 1'b0;
+                        fsr_e_err = 1'b0; fsr_p_err = 1'b0; fsr_pt_err = 1'b0;
                     end
                     phase = P_DEAD;
                 end
@@ -309,20 +351,49 @@ module mt35xu512aba #(
     endtask
 
     integer p, base, s;
+
     always @(posedge csb) begin
-        if (opcode == OP_PP4B && wel && !wip && pp_count > 0) begin
+        // A program or erase issued while the part is still busy does not
+        // happen -- and latches an error, which is how a controller that
+        // failed to poll finds out. WIP alone would just read busy, and the
+        // lost write would look like success once it cleared.
+        if (wip && (opcode == OP_PP4B || opcode == OP_SE4B)) begin
+            if (opcode == OP_PP4B) fsr_p_err = 1'b1;
+            else                   fsr_e_err = 1'b1;
+        end else if (opcode == OP_PP4B && wel && !wip && pp_count > 0) begin
             wip = 1'b1; wel = 1'b0;
-            for (p = 0; p < pp_count; p = p + 1) begin
-                base = (pp_addr + p) % MEM_DEPTH;
-                memory[base] = memory[base] & pp_data[p];
-            end
-            #(PROGRAM_NS) wip = 1'b0;
+            op_addr = pp_addr; op_len = pp_count;
+            for (p = 0; p < pp_count; p = p + 1) op_data[p] = pp_data[p];
+            op_active = 1'b1; op_is_erase = 1'b0;
+            op_remaining = PROGRAM_NS;
         end else if (opcode == OP_SE4B && wel && !wip) begin
             wip = 1'b1; wel = 1'b0;
-            base = ((addr % MEM_DEPTH) / SECTOR_SIZE) * SECTOR_SIZE;
-            for (s = 0; s < SECTOR_SIZE; s = s + 1)
-                if (base + s < MEM_DEPTH) memory[base + s] = 8'hFF;
-            #(ERASE_NS) wip = 1'b0;
+            op_addr = addr;
+            op_active = 1'b1; op_is_erase = 1'b1;
+            op_remaining = ERASE_NS;
+        end
+    end
+
+    // The operation's own clock, so the model stays responsive while busy.
+    always begin
+        #1;
+        if (op_active && op_remaining > 0) begin
+            op_remaining = op_remaining - 1;
+            if (op_remaining == 0) begin
+                if (op_is_erase) begin
+                    base = ((op_addr % MEM_DEPTH) / SECTOR_SIZE) * SECTOR_SIZE;
+                    for (s = 0; s < SECTOR_SIZE; s = s + 1)
+                        if (base + s < MEM_DEPTH) memory[base + s] = 8'hFF;
+                end else begin
+                    for (p = 0; p < op_len; p = p + 1) begin
+                        // NOR programming clears bits; only an erase sets them.
+                        base = (op_addr + p) % MEM_DEPTH;
+                        memory[base] = memory[base] & op_data[p];
+                    end
+                end
+                op_active = 1'b0;
+                wip = 1'b0;
+            end
         end
     end
 

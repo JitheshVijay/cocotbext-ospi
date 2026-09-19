@@ -29,6 +29,15 @@ CR2_MODE_SPI = 0x00
 CR2_MODE_SOPI = 0x01   # 8S-8S-8S
 CR2_MODE_DOPI = 0x02   # 8D-8D-8D
 
+# Security register bits, datasheet Table 5.
+SCUR_WPSEL = 0x80    # 0 = BP protection, 1 = advanced sector protection
+SCUR_E_FAIL = 0x40   # last erase failed or the region was protected
+SCUR_P_FAIL = 0x20   # last program failed or the region was protected
+SCUR_ESB = 0x08      # erase suspended
+SCUR_PSB = 0x04      # program suspended
+SCUR_LDSO = 0x02     # secured OTP locked down (one-way)
+SCUR_OTP = 0x01      # secured OTP factory-lock indicator
+
 # CR2[0x00000300] DC[2:0] -> array read dummy cycles, from the datasheet's
 # "Dummy Cycle and Frequency Table".
 DUMMY_CYCLES = {0b000: 20, 0b001: 18, 0b010: 16, 0b011: 14,
@@ -72,6 +81,17 @@ MX25UM51345G = DeviceProfile(
         # Software reset: RSTEN must immediately precede RST.
         "RSTEN": Op(0x66),
         "RST":   Op(0x99),
+
+        # Security register and advanced sector protection.
+        "RDSCUR": Op(0x2B, addr_bytes=0, dummy=0, opi_addr_bytes=4, opi_dummy=4),
+        "WRSCUR": Op(0x2F),
+        "WPSEL":  Op(0x68),
+        "WRDPB":  Op(0xE1, addr_bytes=4, dummy=0),
+        "RDDPB":  Op(0xE0, addr_bytes=4, dummy=0, opi_dummy=4),
+
+        # Program/erase suspend and resume.
+        "SUSPEND": Op(0xB0),
+        "RESUME":  Op(0x30),
 
         # Array access.
         "READ":  Op(0x13, addr_bytes=4, dummy=0),    # SPI 4-byte read

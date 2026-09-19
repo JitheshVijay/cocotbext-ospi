@@ -29,6 +29,49 @@ SFDP_SIGNATURE = 0x50444653   # "SFDP" little-endian
 
 BFPT_ID = 0xFF00
 PROFILE1_ID = 0xFF05   # xSPI Profile 1.0 (JESD251)
+FOURBAIT_ID = 0xFF84   # 4-byte Address Instruction Table
+
+# 4BAIT dword 1 is a bitmap of which instructions the part supports with a
+# 4-byte address. Bit positions follow Linux's spi_nor_parse_4bait.
+FOURBAIT_READ = 1 << 0          # 0x13
+FOURBAIT_FAST_READ = 1 << 1     # 0x0C
+FOURBAIT_READ_1_1_2 = 1 << 2
+FOURBAIT_READ_1_2_2 = 1 << 3
+FOURBAIT_READ_1_1_4 = 1 << 4
+FOURBAIT_READ_1_4_4 = 1 << 5
+FOURBAIT_PP = 1 << 6            # 0x12
+FOURBAIT_PP_1_1_4 = 1 << 7
+FOURBAIT_PP_1_4_4 = 1 << 8
+FOURBAIT_ERASE_1 = 1 << 9       # erase type 1, opcode in dword 2 byte 0
+FOURBAIT_ERASE_2 = 1 << 10
+FOURBAIT_ERASE_3 = 1 << 11
+FOURBAIT_ERASE_4 = 1 << 12
+FOURBAIT_READ_1_1_1_DTR = 1 << 13
+FOURBAIT_READ_1_2_2_DTR = 1 << 14
+FOURBAIT_READ_1_4_4_DTR = 1 << 15
+FOURBAIT_READ_1_1_8 = 1 << 20
+FOURBAIT_READ_1_8_8 = 1 << 21
+
+FOURBAIT_NAMES = {
+    FOURBAIT_READ: "read",
+    FOURBAIT_FAST_READ: "fast read",
+    FOURBAIT_READ_1_1_2: "read 1-1-2",
+    FOURBAIT_READ_1_2_2: "read 1-2-2",
+    FOURBAIT_READ_1_1_4: "read 1-1-4",
+    FOURBAIT_READ_1_4_4: "read 1-4-4",
+    FOURBAIT_PP: "page program",
+    FOURBAIT_PP_1_1_4: "page program 1-1-4",
+    FOURBAIT_PP_1_4_4: "page program 1-4-4",
+    FOURBAIT_ERASE_1: "erase type 1",
+    FOURBAIT_ERASE_2: "erase type 2",
+    FOURBAIT_ERASE_3: "erase type 3",
+    FOURBAIT_ERASE_4: "erase type 4",
+    FOURBAIT_READ_1_1_1_DTR: "read 1-1-1 DTR",
+    FOURBAIT_READ_1_2_2_DTR: "read 1-2-2 DTR",
+    FOURBAIT_READ_1_4_4_DTR: "read 1-4-4 DTR",
+    FOURBAIT_READ_1_1_8: "read 1-1-8",
+    FOURBAIT_READ_1_8_8: "read 1-8-8",
+}
 
 # Frequency bins the xSPI Profile 1.0 table quotes dummy cycles for. A part
 # lists what each speed needs; a controller picks the bin it runs at, or the
@@ -45,6 +88,20 @@ ADDR_BYTES_NAME = {
     ADDR_3_OR_4: "3 or 4",
     ADDR_4_ONLY: "4 only",
 }
+
+
+def build_4bait(supported: int, erase_opcodes=(0x21, 0xDC)) -> List[int]:
+    """Build a 4-byte Address Instruction Table (id 0xFF84).
+
+    Dword 1 is a bitmap of which instructions work with a 4-byte address;
+    dword 2 packs up to four erase-type opcodes, one per byte. A part that
+    is 4-byte-only still carries this, because it tells a controller which
+    opcode to use rather than leaving it to guess from the 3-byte set.
+    """
+    dw2 = 0
+    for index, opcode in enumerate(erase_opcodes[:4]):
+        dw2 |= (opcode & 0xFF) << (index * 8)
+    return [supported, dw2]
 
 
 # ── building ─────────────────────────────────────────────────────────
@@ -189,10 +246,29 @@ class SfdpInfo:
     rdsr_dummy: Optional[int] = None
     rdsr_addr_bytes: Optional[int] = None
 
+    # Decoded from the 4-byte Address Instruction Table.
+    fourbait: Optional[List[int]] = None
+    fourbait_supported: Optional[int] = None
+    fourbait_erase_opcodes: List[int] = field(default_factory=list)
+
     @property
     def supports_octal_dtr(self) -> bool:
         """True when the part advertises 8D-8D-8D via Profile 1.0."""
         return self.octal_dtr_read_opcode is not None
+
+    def supports_4byte(self, capability: int) -> bool:
+        """True when the part supports ``capability`` with a 4-byte address."""
+        if self.fourbait_supported is None:
+            return False
+        return bool(self.fourbait_supported & capability)
+
+    @property
+    def fourbait_instructions(self) -> List[str]:
+        """Human-readable list of what the 4BAIT advertises."""
+        if self.fourbait_supported is None:
+            return []
+        return [name for bit, name in sorted(FOURBAIT_NAMES.items())
+                if self.fourbait_supported & bit]
 
     def dummy_for_frequency(self, mhz: int) -> Optional[int]:
         """Dummy cycles needed at ``mhz``, or the fastest bin at or below it.
@@ -260,6 +336,9 @@ def parse_sfdp(read) -> SfdpInfo:
         elif head.param_id == PROFILE1_ID:
             info.profile1 = dwords
             _decode_profile1(info)
+        elif head.param_id == FOURBAIT_ID:
+            info.fourbait = dwords
+            _decode_4bait(info)
 
     return info
 
@@ -306,3 +385,15 @@ def _decode_profile1(info: SfdpInfo):
         info.octal_dtr_dummy[166] = (dw5 >> 27) & 0x1F
         info.octal_dtr_dummy[133] = (dw5 >> 17) & 0x1F
         info.octal_dtr_dummy[100] = (dw5 >> 7) & 0x1F
+
+
+def _decode_4bait(info: SfdpInfo):
+    dwords = info.fourbait
+    info.fourbait_supported = dwords[0]
+    if len(dwords) >= 2:
+        for index in range(4):
+            bit = FOURBAIT_ERASE_1 << index
+            if dwords[0] & bit:
+                info.fourbait_erase_opcodes.append(
+                    (dwords[1] >> (index * 8)) & 0xFF
+                )

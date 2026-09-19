@@ -307,3 +307,53 @@ class XspiFlash:
         rdsr.opi_addr_bytes = info.rdsr_addr_bytes
 
         return info
+
+    # ── security register, protection, suspend ───────────────────────
+
+    async def read_security(self) -> int:
+        """Read the security register (RDSCUR)."""
+        return (await self._transfer("RDSCUR", address=0, read=1))[0]
+
+    async def enable_advanced_protection(self):
+        """WPSEL: switch to advanced sector protection.
+
+        One-way on real silicon -- there is no command to go back -- so a
+        test that calls this cannot un-call it.
+        """
+        await self.write_enable()
+        await self._transfer("WPSEL")
+
+    async def write_protection_bit(self, address: int, protected: bool):
+        """Set or clear the dynamic protection bit for a sector."""
+        await self._transfer("WRDPB", address=address,
+                             write=[0xFF if protected else 0x00])
+
+    async def read_protection_bit(self, address: int) -> bool:
+        value = (await self._transfer("RDDPB", address=address, read=1))[0]
+        return value != 0x00
+
+    async def suspend(self):
+        """Suspend a program or erase in flight."""
+        await self._transfer("SUSPEND")
+
+    async def resume(self):
+        """Resume a suspended program or erase."""
+        await self._transfer("RESUME")
+
+    # ── flag status register (Micron) ────────────────────────────────
+
+    async def read_flag_status(self) -> int:
+        """Read the flag status register.
+
+        Reads two bytes and keeps the first: 8D-8D-8D cannot transfer an odd
+        number of bytes, and Linux does exactly this for the same reason.
+        Unlike the status register's WIP, the error bits here latch until
+        cleared, so they say whether the last operation actually worked.
+        """
+        data = await self._transfer("RDFSR", address=0,
+                                    read=2 if self.dtr else 1)
+        return data[0]
+
+    async def clear_flag_status(self):
+        """Clear the latched error bits."""
+        await self._transfer("CLFSR")
