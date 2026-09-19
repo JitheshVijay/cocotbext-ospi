@@ -12,6 +12,8 @@ two cannot drift apart.
 
 Layout, from JESD216:
 
+::
+
     offset 0   SFDP header, 8 bytes
                "SFDP" signature, minor/major revision, NPH, access protocol
     offset 8   one 8-byte parameter header per table
