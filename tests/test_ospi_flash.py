@@ -1,106 +1,157 @@
-"""Functional tests for the OSPI flash model and the cocotbext-ospi driver."""
+"""Functional tests for the OSPI NOR flash model and the cocotbext-ospi driver."""
 
 import cocotb
 from cocotb.clock import Clock
 
-from cocotbext.ospi import OspiFlash
+from cocotbext.ospi import (
+    OspiFlash,
+    CMD_READ, CMD_DIOR, CMD_QIOR, CMD_OIOR,
+    STATUS_WEL, STATUS_WIP,
+)
 
-# 0 single, 1 dual, 2 quad, 3 octal
-ALL_MODES = [0, 1, 2, 3]
-MODE_NAMES = {0: "single", 1: "dual", 2: "quad", 3: "octal"}
+READ_OPCODES = [CMD_READ, CMD_DIOR, CMD_QIOR, CMD_OIOR]
+NAMES = {CMD_READ: "read", CMD_DIOR: "dual I/O",
+         CMD_QIOR: "quad I/O", CMD_OIOR: "octal I/O"}
 
 
 async def setup(dut):
-    """Start the OSPI clock and reset the flash."""
-    cocotb.start_soon(Clock(dut.OSPI_CLK, 20, units="ns").start())
+    cocotb.start_soon(Clock(dut.clk, 20, unit="ns").start())
     flash = OspiFlash(dut)
     await flash.initialize()
     return flash
 
 
 @cocotb.test()
-async def test_write_then_read_every_mode(dut):
-    """A programmed byte reads back unchanged in all four lane widths."""
+async def test_jedec_id(dut):
+    """The device identifies itself."""
     flash = await setup(dut)
-    for mode in ALL_MODES:
-        address = 0x10 + mode
-        value = 0xA5 + mode
-        await flash.write(address, value, mode=mode)
-        got = await flash.read(address, mode=mode)
-        assert got == value, (
-            f"{MODE_NAMES[mode]} mode: read {got:#04x}, wrote {value:#04x}"
-        )
+    assert await flash.read_id() == [0xC2, 0x80, 0x39]
 
 
 @cocotb.test()
-async def test_erase_restores_ff(dut):
-    """Erasing returns the byte to 0xFF, in every mode."""
-    flash = await setup(dut)
-    for mode in ALL_MODES:
-        address = 0x20 + mode
-        await flash.write(address, 0x5A, mode=mode)
-        assert await flash.read(address, mode=mode) == 0x5A
-        await flash.erase(address, mode=mode)
-        assert await flash.read(address, mode=mode) == 0xFF
-
-
-@cocotb.test()
-async def test_modes_share_one_memory(dut):
-    """A byte written in one mode is readable in any other."""
-    flash = await setup(dut)
-    await flash.write(0x30, 0xC3, mode=3)   # octal
-    for mode in ALL_MODES:
-        got = await flash.read(0x30, mode=mode)
-        assert got == 0xC3, f"read back {got:#04x} in {MODE_NAMES[mode]} mode"
-
-
-@cocotb.test()
-async def test_addresses_are_independent(dut):
-    """Writing one address leaves its neighbours alone."""
-    flash = await setup(dut)
-    for offset, value in enumerate((0x11, 0x22, 0x33)):
-        await flash.write(0x40 + offset, value, mode=2)
-    for offset, value in enumerate((0x11, 0x22, 0x33)):
-        assert await flash.read(0x40 + offset, mode=2) == value
-
-
-@cocotb.test()
-async def test_unwritten_memory_reads_erased(dut):
+async def test_erased_memory_reads_ff(dut):
     """Flash powers up erased."""
     flash = await setup(dut)
-    assert await flash.read(0x7F, mode=2) == 0xFF
+    assert await flash.read(0x000000, 4) == [0xFF] * 4
 
 
 @cocotb.test()
-async def test_byte_values_round_trip(dut):
-    """Bit patterns that stress lane packing survive the round trip."""
+async def test_write_enable_latch(dut):
+    """WREN sets WEL and WRDI clears it."""
     flash = await setup(dut)
-    values = [0x00, 0x01, 0x80, 0x0F, 0xF0, 0xFF, 0xA5, 0x5A]
-    for address, value in enumerate(values):
-        await flash.write(address, value, mode=1)
-    for address, value in enumerate(values):
-        got = await flash.read(address, mode=1)
-        assert got == value, f"addr {address:#04x}: {got:#04x} != {value:#04x}"
+    assert not await flash.read_status() & STATUS_WEL
+    await flash.write_enable()
+    assert await flash.read_status() & STATUS_WEL
+    await flash.write_disable()
+    assert not await flash.read_status() & STATUS_WEL
 
 
 @cocotb.test()
-async def test_24_bit_address_low_byte_selects_cell(dut):
-    """The address is carried as 24 bits; memory is indexed by its low byte."""
+async def test_program_requires_write_enable(dut):
+    """A program with no WEL is ignored, as the device requires."""
     flash = await setup(dut)
-    await flash.write(0x00, 0x77, mode=2)
-    assert await flash.read(0xABCD00, mode=2) == 0x77
+    await flash.master.start()
+    await flash.master.send_byte(0x02, lanes=1)
+    await flash.master.send_address(0x000000, lanes=1)
+    await flash.master.send_byte(0xA5, lanes=1)
+    await flash.master.stop()
+    assert await flash.read_byte(0x000000) == 0xFF, "programmed without WEL"
 
 
 @cocotb.test()
-async def test_hold_preserves_memory(dut):
-    """Data written before a hold is intact after the hold is released."""
+async def test_program_then_read(dut):
+    """A programmed byte reads back."""
     flash = await setup(dut)
-    await flash.write(0x50, 0xC5, mode=0)
+    await flash.program(0x000010, 0xA5)
+    assert await flash.read_byte(0x000010) == 0xA5
+
+
+@cocotb.test()
+async def test_program_clears_bits_only(dut):
+    """NOR programming can clear bits but never set them."""
+    flash = await setup(dut)
+    await flash.program(0x000020, 0xF0)
+    assert await flash.read_byte(0x000020) == 0xF0
+    await flash.program(0x000020, 0x0F)
+    assert await flash.read_byte(0x000020) == 0x00
+    await flash.erase_sector(0x000020)
+    assert await flash.read_byte(0x000020) == 0xFF
+
+
+@cocotb.test()
+async def test_wip_is_asserted_during_program(dut):
+    """The device reports busy, and WEL is consumed by the operation."""
+    flash = await setup(dut)
+    await flash.write_enable()
+    await flash.master.start()
+    await flash.master.send_byte(0x02, lanes=1)
+    await flash.master.send_address(0x000030, lanes=1)
+    await flash.master.send_byte(0x5A, lanes=1)
+    await flash.master.stop()
+
+    assert await flash.read_status() & STATUS_WIP, "WIP not set after program"
+    await flash.wait_ready()
+    status = await flash.read_status()
+    assert not status & STATUS_WIP
+    assert not status & STATUS_WEL, "WEL should be consumed by the program"
+    assert await flash.read_byte(0x000030) == 0x5A
+
+
+@cocotb.test()
+async def test_page_program_multiple_bytes(dut):
+    """A page program writes a run of bytes."""
+    flash = await setup(dut)
+    payload = [0x11, 0x22, 0x33, 0x44, 0x55]
+    await flash.program(0x000040, payload)
+    assert await flash.read(0x000040, len(payload)) == payload
+
+
+@cocotb.test()
+async def test_all_read_widths_agree(dut):
+    """Single, dual, quad and octal I/O return the same bytes."""
+    flash = await setup(dut)
+    payload = [0x00, 0x0F, 0xF0, 0xA5, 0x5A, 0x81]
+    await flash.program(0x000050, payload)
+
+    for opcode in READ_OPCODES:
+        got = await flash.read(0x000050, len(payload), opcode=opcode)
+        assert got == payload, f"{NAMES[opcode]}: {[hex(b) for b in got]}"
+
+
+@cocotb.test()
+async def test_sector_erase_spans_the_sector(dut):
+    """Erase clears its whole 4 KB sector and leaves the next one alone."""
+    flash = await setup(dut)
+    await flash.program(0x000000, 0x11)
+    await flash.program(0x000FFF, 0x22)
+    await flash.program(0x001000, 0x33)
+
+    await flash.erase_sector(0x000000)
+
+    assert await flash.read_byte(0x000000) == 0xFF
+    assert await flash.read_byte(0x000FFF) == 0xFF
+    assert await flash.read_byte(0x001000) == 0x33, "erase crossed the sector"
+
+
+@cocotb.test()
+async def test_reads_auto_increment(dut):
+    """A read streams consecutive addresses."""
+    flash = await setup(dut)
+    payload = [0xDE, 0xAD, 0xBE, 0xEF]
+    await flash.program(0x000060, payload)
+    assert await flash.read(0x000060, 4) == payload
+
+
+@cocotb.test()
+async def test_hold_preserves_state(dut):
+    """Data survives a hold, and the device works again afterwards."""
+    flash = await setup(dut)
+    await flash.program(0x000070, 0xC5)
 
     await flash.hold()
     await flash.release_hold()
 
-    assert await flash.read(0x50, mode=0) == 0xC5
-    # And the device still accepts new traffic afterwards.
-    await flash.write(0x50, 0xC6, mode=1)
-    assert await flash.read(0x50, mode=1) == 0xC6
+    assert await flash.read_byte(0x000070) == 0xC5
+    await flash.erase_sector(0x000070)
+    await flash.program(0x000070, 0xC6)
+    assert await flash.read_byte(0x000070, opcode=CMD_OIOR) == 0xC6

@@ -1,83 +1,195 @@
-"""High-level driver for the OSPI flash model."""
+"""Device-level driver for an OSPI NOR flash."""
 
-from cocotb.triggers import FallingEdge, RisingEdge, Timer
+from cocotb.triggers import RisingEdge, Timer
 
 from .ospi_bus import OspiBus
-from .ospi_config import OspiConfig, lanes_for_mode
+from .ospi_master import OspiMaster
 
-CMD_WRITE = 0x02
-CMD_READ = 0x03
-CMD_ERASE = 0x20
+# JEDEC opcodes. The opcode itself is always single-lane; only the address,
+# mode byte and data widen.
+CMD_WREN = 0x06   # write enable
+CMD_WRDI = 0x04   # write disable
+CMD_RDSR = 0x05   # read status register
+CMD_RDID = 0x9F   # read JEDEC id
+CMD_RDP = 0xAB    # release from deep power-down
+CMD_DP = 0xB9     # deep power-down
+CMD_READ = 0x03   # read data                    (1 lane)
+CMD_DIOR = 0xBB   # fast read dual I/O           (2 lanes)
+CMD_QIOR = 0xEB   # fast read quad I/O           (4 lanes)
+CMD_OIOR = 0x8B   # fast read octal I/O          (8 lanes)
+CMD_PP = 0x02     # page program
+CMD_SE = 0x20     # sector erase
+
+STATUS_WIP = 0x01  # write in progress
+STATUS_WEL = 0x02  # write enable latch
+
+#: Lanes used for the address/mode/data phases of each read opcode.
+READ_LANES = {CMD_READ: 1, CMD_DIOR: 2, CMD_QIOR: 4, CMD_OIOR: 8}
+
+READ_NAMES = {CMD_READ: "read", CMD_DIOR: "dual I/O",
+              CMD_QIOR: "quad I/O", CMD_OIOR: "octal I/O"}
 
 
 class OspiFlash:
-    """Page-program / read / erase against ``ospi_flash.v``.
+    """Drives an OSPI NOR flash the way a real controller does.
 
-    Every operation is one chip-select framed transaction carrying a 24-bit
-    address. ``mode`` picks the lane width -- 0 single, 1 dual, 2 quad,
-    3 octal -- and the same byte round-trips through any of them.
+    Programming clears bits only, so a byte must be erased before it can be
+    rewritten -- :meth:`program` will not silently turn a 0 back into a 1.
+    Program and erase assert WIP; :meth:`wait_ready` polls the status
+    register rather than assuming a fixed delay.
     """
 
-    def __init__(self, dut, bus: OspiBus = None, config: OspiConfig = None):
+    #: Dummy cycles between the mode byte and read data. Matches the model's
+    #: DUMMY parameter; real parts vary, so it is configurable.
+    dummy_cycles = 8
+
+    def __init__(self, dut, bus: OspiBus = None, dummy_cycles: int = None):
         self.dut = dut
         self.bus = bus or OspiBus.from_entity(dut)
-        self.config = config or OspiConfig()
+        self.master = OspiMaster(self.bus)
+        if dummy_cycles is not None:
+            self.dummy_cycles = dummy_cycles
 
     async def initialize(self):
-        """Pulse reset and leave the bus idle with hold released."""
-        self.bus.cs.value = 1
+        """Put the bus in a known state and frame the device.
+
+        The model sets up its framing on a chip-select edge, so drive one
+        before the first transaction rather than relying on initial values.
+        """
         self.bus.io_oe.value = 0
         self.bus.io_out.value = 0
-        # HOLD_N is active low: high means "not held", which is what a normal
-        # transaction needs. Driving it low here would freeze the interface.
-        self.dut.HOLD_N.value = 1
-        self.dut.reset_n.value = 0
-        await Timer(20, units="ns")
-        self.dut.reset_n.value = 1
+        if self.bus.hold is not None:
+            # HOLD_N is active low: high means "not held". Driving it low
+            # here would freeze the interface before anything could run.
+            self.bus.hold.value = 1
+        self.bus.cs.value = 1
         await RisingEdge(self.bus.clk)
-
-    async def write(self, address: int, data: int, mode: int = 0):
-        """Program one byte at ``address``."""
-        lanes_for_mode(mode)
-        self.bus.set_mode(mode)
-        await self.bus.start_transaction()
-        await self.bus.send_byte(CMD_WRITE, mode)
-        await self.bus.send_address(address, mode)
-        await self.bus.send_byte(data & 0xFF, mode)
-        await self.bus.end_transaction()
-
-    async def read(self, address: int, mode: int = 0) -> int:
-        """Read the byte at ``address``."""
-        lanes_for_mode(mode)
-        self.bus.set_mode(mode)
-        await self.bus.start_transaction()
-        await self.bus.send_byte(CMD_READ, mode)
-        await self.bus.send_address(address, mode)
-
-        # Release during the dummy clock so master and slave never both drive.
-        self.bus.release()
+        self.bus.cs.value = 0
         await RisingEdge(self.bus.clk)
-        await FallingEdge(self.bus.clk)
+        self.bus.cs.value = 1
+        await RisingEdge(self.bus.clk)
+        await self.release_power_down()
 
-        value = await self.bus.recv_byte(mode)
-        await self.bus.end_transaction()
-        return value
+    # ── simple commands ──────────────────────────────────────────────
 
-    async def erase(self, address: int, mode: int = 0):
-        """Erase ``address`` back to 0xFF."""
-        lanes_for_mode(mode)
-        self.bus.set_mode(mode)
-        await self.bus.start_transaction()
-        await self.bus.send_byte(CMD_ERASE, mode)
-        await self.bus.send_address(address, mode)
-        await self.bus.end_transaction()
+    async def _command(self, opcode: int):
+        await self.master.start()
+        await self.master.send_byte(opcode, lanes=1)
+        await self.master.stop()
 
-    async def hold(self):
+    async def release_power_down(self):
+        await self._command(CMD_RDP)
+
+    async def power_down(self):
+        await self._command(CMD_DP)
+
+    async def write_enable(self):
+        await self._command(CMD_WREN)
+
+    async def write_disable(self):
+        await self._command(CMD_WRDI)
+
+    # ── status ───────────────────────────────────────────────────────
+
+    async def read_status(self) -> int:
+        await self.master.start()
+        await self.master.send_byte(CMD_RDSR, lanes=1)
+        status = await self.master.recv_byte(lanes=1)
+        await self.master.stop()
+        return status
+
+    async def read_id(self) -> list:
+        """Read the three JEDEC id bytes."""
+        await self.master.start()
+        await self.master.send_byte(CMD_RDID, lanes=1)
+        ident = await self.master.recv_bytes(3, lanes=1)
+        await self.master.stop()
+        return ident
+
+    async def is_busy(self) -> bool:
+        return bool(await self.read_status() & STATUS_WIP)
+
+    async def wait_ready(self, timeout_polls: int = 1000):
+        """Poll the status register until WIP clears.
+
+        This is how a controller learns a program or erase finished; assuming
+        a fixed delay instead is what hides real timing bugs.
+        """
+        for _ in range(timeout_polls):
+            if not await self.is_busy():
+                return
+        raise TimeoutError(f"WIP still set after {timeout_polls} status polls")
+
+    # ── reads ────────────────────────────────────────────────────────
+
+    async def read(self, address: int, length: int = 1,
+                   opcode: int = CMD_READ) -> list:
+        """Read ``length`` bytes starting at ``address``.
+
+        ``opcode`` picks the width: 0x03 single, 0xBB dual I/O, 0xEB quad
+        I/O, 0x8B octal I/O. The wider ones send a mode byte and dummy
+        cycles after the address.
+        """
+        try:
+            lanes = READ_LANES[opcode]
+        except KeyError:
+            raise ValueError(f"{opcode:#04x} is not a read opcode") from None
+
+        await self.master.start()
+        await self.master.send_byte(opcode, lanes=1)
+        await self.master.send_address(address, lanes=lanes)
+        if lanes > 1:
+            # Mode byte: 0xA5 would arm continuous-read (XIP) on a real part,
+            # so send 0x00 to keep each transaction self-contained.
+            await self.master.send_byte(0x00, lanes=lanes)
+            await self.master.dummy_cycles(self.dummy_cycles)
+        data = await self.master.recv_bytes(length, lanes=lanes)
+        await self.master.stop()
+        return data
+
+    async def read_byte(self, address: int, opcode: int = CMD_READ) -> int:
+        return (await self.read(address, 1, opcode))[0]
+
+    # ── writes ───────────────────────────────────────────────────────
+
+    async def program(self, address: int, data, wait: bool = True):
+        """Page program. Sets WEL first, as the device requires.
+
+        NOR programming only clears bits, so program into erased space.
+        """
+        if isinstance(data, int):
+            data = [data]
+
+        await self.write_enable()
+        await self.master.start()
+        await self.master.send_byte(CMD_PP, lanes=1)
+        await self.master.send_address(address, lanes=1)
+        for byte in data:
+            await self.master.send_byte(byte & 0xFF, lanes=1)
+        await self.master.stop()
+
+        if wait:
+            await self.wait_ready()
+
+    async def erase_sector(self, address: int, wait: bool = True):
+        """Erase the 4 KB sector containing ``address`` back to 0xFF."""
+        await self.write_enable()
+        await self.master.start()
+        await self.master.send_byte(CMD_SE, lanes=1)
+        await self.master.send_address(address, lanes=1)
+        await self.master.stop()
+
+        if wait:
+            await self.wait_ready()
+
+    # ── hold ─────────────────────────────────────────────────────────
+
+    async def hold(self, duration_ns: int = 100):
         """Assert HOLD_N, freezing the interface."""
-        self.dut.HOLD_N.value = 0
-        await Timer(10, units="ns")
+        self.bus.hold.value = 0
+        await Timer(duration_ns, unit="ns")
 
-    async def release_hold(self):
+    async def release_hold(self, duration_ns: int = 100):
         """Deassert HOLD_N, resuming normal operation."""
-        self.dut.HOLD_N.value = 1
-        await Timer(10, units="ns")
+        self.bus.hold.value = 1
+        await Timer(duration_ns, unit="ns")

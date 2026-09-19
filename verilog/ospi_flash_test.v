@@ -1,32 +1,37 @@
 // Top level for the cocotb testbench.
 //
-// cocotb acts as the OSPI master. It cannot drive an inout net directly, so
-// the master's side of OSPI_IO is split into a value (io_out) and an output
-// enable (io_oe); releasing io_oe hands the bus to the flash for read data.
+// cocotb cannot drive an inout net directly, so the master's half of the bus
+// is split into a value (io_out) and a per-lane output enable (io_oe).
+// Per-lane matters: in single-lane mode the master drives io0 while the
+// device answers on io1, so one bus-wide enable would collide.
+//
+// csb is deliberately uninitialised -- the model frames on chip-select
+// edges, and an initialiser here would race cocotb's first write at time 0.
 
 `timescale 1ns/1ps
 
 module ospi_flash_test;
 
-    reg        OSPI_CLK = 1'b0;
-    reg        OSPI_CS  = 1'b1;   // active low, starts deasserted
-    reg        reset_n  = 1'b0;
-    reg        HOLD_N   = 1'b1;   // active low, starts released
-    reg [1:0]  mode     = 2'd0;
-    reg [7:0]  io_out   = 8'h00;
-    reg        io_oe    = 1'b0;
+    reg       csb;
+    reg       clk    = 1'b0;
+    reg       HOLD_N = 1'b1;   // active low, starts released
+    reg [7:0] io_out;
+    reg [7:0] io_oe;
 
-    wire [7:0] OSPI_IO;
+    wire [7:0] io;
 
-    assign OSPI_IO = io_oe ? io_out : 8'bzzzzzzzz;
+    genvar g;
+    generate
+        for (g = 0; g < 8; g = g + 1) begin : lane
+            assign io[g] = io_oe[g] ? io_out[g] : 1'bz;
+        end
+    endgenerate
 
     ospi_flash dut (
-        .OSPI_CLK (OSPI_CLK),
-        .OSPI_CS  (OSPI_CS),
-        .OSPI_IO  (OSPI_IO),
-        .reset_n  (reset_n),
-        .HOLD_N   (HOLD_N),
-        .mode     (mode)
+        .clk    (clk),
+        .csb    (csb),
+        .io     (io),
+        .HOLD_N (HOLD_N)
     );
 
 endmodule

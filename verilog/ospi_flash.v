@@ -1,148 +1,264 @@
-// Octal-SPI (OSPI) flash slave model.
+// OSPI NOR flash slave model, JEDEC command set.
 //
-// A transaction is framed by OSPI_CS (active low) and clocked on the rising
-// edge of OSPI_CLK. `mode` selects how many of the eight OSPI_IO lines carry
-// data at once, so it sets how many clocks a byte costs:
+// Behaves like a serial NOR flash with an octal data bus: SPI mode 0,
+// most-significant bit first, 24-bit addresses, and a command set where the
+// opcode itself is always single-lane and only the address, mode byte and
+// data widen -- to two, four or eight lanes.
 //
-//   mode 0  single  1 lane   8 clocks/byte
-//   mode 1  dual    2 lanes  4 clocks/byte
-//   mode 2  quad    4 lanes  2 clocks/byte
-//   mode 3  octal   8 lanes  1 clock/byte
+//   0x06 WREN   set the write enable latch
+//   0x04 WRDI   clear it
+//   0x05 RDSR   read status: bit0 WIP (busy), bit1 WEL
+//   0x9F RDID   three JEDEC id bytes
+//   0xAB RDP    release from deep power-down
+//   0xB9 DP     enter deep power-down
+//   0x03 READ   addr(1) data(1)
+//   0xBB DIOR   addr(2) mode(2) dummy data(2)
+//   0xEB QIOR   addr(4) mode(4) dummy data(4)
+//   0x8B OIOR   addr(8) mode(8) dummy data(8)
+//   0x02 PP     page program, addr(1) data(1); needs WEL, sets WIP
+//   0x20 SE     4 KB sector erase, addr(1); needs WEL, sets WIP
 //
-// Bits travel most-significant first on the low `lanes` lines. Every command
-// carries a 24-bit address; memory is 256 bytes, so the low byte indexes it.
+// Programming can only clear bits, as NOR flash does -- a byte must be
+// erased before it can be rewritten. Program and erase assert WIP for a
+// simulated duration, so a controller has to poll RDSR rather than assume
+// the write landed instantly.
 //
-//   write   0x02 | addr[23:0] | data
-//   read    0x03 | addr[23:0] | dummy | <data>
-//   erase   0x20 | addr[23:0]
-//
-// The slave drives OSPI_IO only during a read's data phase; the dummy clock
-// after the address lets the master release the bus first, so the two never
-// contend. Holding HOLD_N low freezes the interface mid-transaction without
-// losing state. Memory powers up erased (0xFF).
+// HOLD_N is active low and freezes the interface mid-transaction without
+// losing state.
 
 `timescale 1ns/1ps
 
 module ospi_flash #(
-    parameter MEM_DEPTH = 256
+    parameter MEM_DEPTH   = 65536,
+    parameter SECTOR_SIZE = 4096,
+    parameter PAGE_SIZE   = 256,
+    parameter PROGRAM_NS  = 1000,
+    parameter ERASE_NS    = 5000,
+    parameter DUMMY       = 8,      // dummy cycles after the mode byte
+    parameter [7:0] ID0   = 8'hC2,  // manufacturer
+    parameter [7:0] ID1   = 8'h80,  // memory type
+    parameter [7:0] ID2   = 8'h39  // capacity
 )(
-    input  wire       OSPI_CLK,
-    input  wire       OSPI_CS,    // active low chip select
-    inout  wire [7:0] OSPI_IO,
-    input  wire       reset_n,
-    input  wire       HOLD_N,     // active low; freezes the interface
-    input  wire [1:0] mode        // 0 single, 1 dual, 2 quad, 3 octal
+    input  wire       clk,
+    input  wire       csb,          // active low chip select
+    inout  wire [7:0] io,
+    input  wire       HOLD_N        // active low; freezes the interface
 );
 
-    localparam [7:0] CMD_WRITE = 8'h02;
-    localparam [7:0] CMD_READ  = 8'h03;
-    localparam [7:0] CMD_ERASE = 8'h20;
-
-    localparam [2:0] S_CMD   = 3'd0,
-                     S_ADDR  = 3'd1,
-                     S_WDATA = 3'd2,
-                     S_DUMMY = 3'd3,
-                     S_RDATA = 3'd4,
-                     S_DONE  = 3'd5;
+    localparam [7:0] CMD_WREN = 8'h06,
+                     CMD_WRDI = 8'h04,
+                     CMD_RDSR = 8'h05,
+                     CMD_RDID = 8'h9F,
+                     CMD_RDP  = 8'hAB,
+                     CMD_DP   = 8'hB9,
+                     CMD_READ = 8'h03,
+                     CMD_DIOR = 8'hBB,
+                     CMD_QIOR = 8'hEB,
+                     CMD_OIOR = 8'h8B,
+                     CMD_PP   = 8'h02,
+                     CMD_SE   = 8'h20;
 
     reg [7:0]  memory [0:MEM_DEPTH-1];
-    reg [2:0]  state;
-    reg [3:0]  bits;        // bits accumulated into the current byte
-    reg [1:0]  addr_byte;   // which of the three address bytes is in flight
-    reg [7:0]  cmd, shreg, rdata_sh;
+
+    reg [7:0]  buffer;
+    integer    bitcount;
+    integer    bytecount;
+    integer    dummycount;
+    reg [7:0]  cmd;
     reg [23:0] addr;
 
-    // Lane count and the mask of active lines for the selected mode.
-    wire [3:0] lanes = (mode == 2'd0) ? 4'd1 :
-                       (mode == 2'd1) ? 4'd2 :
-                       (mode == 2'd2) ? 4'd4 : 4'd8;
-    wire [8:0] mask9 = (9'd1 << lanes) - 9'd1;
-    wire [7:0] mask  = mask9[7:0];
+    integer    lanes;       // lanes for the phase in progress
+    reg        driving;
+    reg [7:0]  dout;
 
-    // The byte as it stands once this clock's lanes are shifted in.
-    wire [7:0] shifted   = (shreg << lanes) | (OSPI_IO & mask);
-    wire       byte_done = (bits + lanes == 4'd8);
-    wire [7:0] next_addr_lo = shifted;
+    reg        wel;
+    reg        wip;
+    reg        powered_up;
+
+    reg [7:0]  pp_data [0:PAGE_SIZE-1];
+    integer    pp_count;
 
     integer i;
     initial begin
         for (i = 0; i < MEM_DEPTH; i = i + 1) memory[i] = 8'hFF;
-        state     = S_CMD;
-        bits      = 4'd0;
-        addr_byte = 2'd0;
-        shreg     = 8'h00;
+        bitcount   = 0;
+        bytecount  = 0;
+        dummycount = 0;
+        lanes      = 1;
+        driving    = 0;
+        buffer     = 0;
+        cmd        = 0;
+        addr       = 0;
+        wel        = 0;
+        wip        = 0;
+        powered_up = 1;
+        pp_count   = 0;
     end
 
-    // Only ever drive the bus while returning read data; present the top
-    // `lanes` bits of what is left to send.
-    assign OSPI_IO = (state == S_RDATA && !OSPI_CS && HOLD_N)
-                     ? ((rdata_sh >> (4'd8 - lanes)) & mask)
-                     : 8'bzzzzzzzz;
+    // The device drives only the lanes the current phase uses; in single-lane
+    // mode that is io1 (MISO) while the master keeps io0.
+    assign io[0] = (driving && lanes > 1) ? dout[0] : 1'bz;
+    assign io[1] = driving                ? dout[1] : 1'bz;
+    assign io[2] = (driving && lanes >= 4) ? dout[2] : 1'bz;
+    assign io[3] = (driving && lanes >= 4) ? dout[3] : 1'bz;
+    assign io[4] = (driving && lanes == 8) ? dout[4] : 1'bz;
+    assign io[5] = (driving && lanes == 8) ? dout[5] : 1'bz;
+    assign io[6] = (driving && lanes == 8) ? dout[6] : 1'bz;
+    assign io[7] = (driving && lanes == 8) ? dout[7] : 1'bz;
 
-    always @(posedge OSPI_CLK or negedge reset_n or posedge OSPI_CS) begin
-        if (!reset_n) begin
-            state     <= S_CMD;
-            bits      <= 4'd0;
-            addr_byte <= 2'd0;
-            shreg     <= 8'h00;
-        end else if (OSPI_CS) begin
-            // Deasserting chip select ends the transaction.
-            state     <= S_CMD;
-            bits      <= 4'd0;
-            addr_byte <= 2'd0;
-            shreg     <= 8'h00;
-        end else if (!HOLD_N) begin
-            // Hold asserted: ignore the clock, keep every register as it is.
-            state     <= state;
-        end else begin
-            shreg <= shifted;
-            bits  <= byte_done ? 4'd0 : (bits + lanes);
+    wire [7:0] status = {6'b0, wel, wip};
 
-            case (state)
-                S_CMD: if (byte_done) begin
-                    cmd   <= shifted;
-                    state <= S_ADDR;
-                end
+    task handle_byte;
+        begin
+            if (bytecount == 1) begin
+                cmd = buffer;
+                case (cmd)
+                    CMD_WREN: if (!wip) wel = 1'b1;
+                    CMD_WRDI: wel = 1'b0;
+                    CMD_RDP:  powered_up = 1'b1;
+                    CMD_DP:   powered_up = 1'b0;
+                    CMD_DIOR: lanes = 2;   // widens straight after the opcode
+                    CMD_QIOR: lanes = 4;
+                    CMD_OIOR: lanes = 8;
+                    CMD_RDSR: buffer = status;
+                    CMD_RDID: buffer = ID0;
+                    default: ;
+                endcase
+            end else begin
+                case (cmd)
+                    CMD_RDSR: buffer = status;
+                    CMD_RDID: buffer = (bytecount == 2) ? ID1 :
+                                       (bytecount == 3) ? ID2 : 8'h00;
 
-                S_ADDR: if (byte_done) begin
-                    addr <= {addr[15:0], next_addr_lo};
-                    if (addr_byte == 2'd2) begin
-                        addr_byte <= 2'd0;
-                        case (cmd)
-                            CMD_WRITE: state <= S_WDATA;
-                            CMD_READ: begin
-                                rdata_sh <= memory[next_addr_lo];
-                                state    <= S_DUMMY;
-                            end
-                            CMD_ERASE: begin
-                                memory[next_addr_lo] <= 8'hFF;
-                                state                <= S_DONE;
-                            end
-                            default: state <= S_DONE;
-                        endcase
-                    end else begin
-                        addr_byte <= addr_byte + 2'd1;
+                    CMD_READ: begin
+                        if (bytecount == 2) addr[23:16] = buffer;
+                        if (bytecount == 3) addr[15:8]  = buffer;
+                        if (bytecount == 4) addr[7:0]   = buffer;
+                        if (bytecount >= 4 && powered_up && !wip) begin
+                            buffer = memory[addr % MEM_DEPTH];
+                            addr = addr + 1;
+                        end
                     end
-                end
 
-                S_WDATA: if (byte_done) begin
-                    memory[addr[7:0]] <= shifted;
-                    state             <= S_DONE;
-                end
+                    CMD_DIOR, CMD_QIOR, CMD_OIOR: begin
+                        if (bytecount == 2) addr[23:16] = buffer;
+                        if (bytecount == 3) addr[15:8]  = buffer;
+                        if (bytecount == 4) addr[7:0]   = buffer;
+                        if (bytecount == 5) dummycount = DUMMY;  // mode byte
+                        if (bytecount >= 5 && powered_up && !wip) begin
+                            buffer = memory[addr % MEM_DEPTH];
+                            addr = addr + 1;
+                        end
+                    end
 
-                // One turnaround clock; the master releases OSPI_IO here.
-                S_DUMMY: begin
-                    bits  <= 4'd0;
-                    state <= S_RDATA;
-                end
+                    CMD_PP: begin
+                        if (bytecount == 2) addr[23:16] = buffer;
+                        if (bytecount == 3) addr[15:8]  = buffer;
+                        if (bytecount == 4) addr[7:0]   = buffer;
+                        if (bytecount >= 5 && pp_count < PAGE_SIZE) begin
+                            pp_data[pp_count] = buffer;
+                            pp_count = pp_count + 1;
+                        end
+                    end
 
-                S_RDATA: begin
-                    rdata_sh <= rdata_sh << lanes;
-                    if (byte_done) state <= S_DONE;
-                end
+                    CMD_SE: begin
+                        if (bytecount == 2) addr[23:16] = buffer;
+                        if (bytecount == 3) addr[15:8]  = buffer;
+                        if (bytecount == 4) addr[7:0]   = buffer;
+                    end
 
-                default: ; // S_DONE: idle until chip select rises
+                    default: ;
+                endcase
+            end
+        end
+    endtask
+
+    integer p, base, s;
+    always @(csb) begin
+        if (csb) begin
+            // Rising edge commits whatever the transaction asked for.
+            if (cmd == CMD_PP && wel && !wip && pp_count > 0) begin
+                wip = 1'b1;
+                wel = 1'b0;
+                for (p = 0; p < pp_count; p = p + 1) begin
+                    // addr holds where the program started -- unlike a read,
+                    // a page program does not advance it as bytes arrive.
+                    // Programming clears bits only; erase is what sets them.
+                    base = (addr + p) % MEM_DEPTH;
+                    memory[base] = memory[base] & pp_data[p];
+                end
+                #(PROGRAM_NS) wip = 1'b0;
+            end else if (cmd == CMD_SE && wel && !wip) begin
+                wip = 1'b1;
+                wel = 1'b0;
+                base = (addr / SECTOR_SIZE) * SECTOR_SIZE;
+                for (s = 0; s < SECTOR_SIZE; s = s + 1)
+                    if (base + s < MEM_DEPTH) memory[base + s] = 8'hFF;
+                #(ERASE_NS) wip = 1'b0;
+            end
+        end
+    end
+
+    // Reset the framing whenever chip select moves.
+    always @(csb) begin
+        bitcount   = 0;
+        bytecount  = 0;
+        dummycount = 0;
+        lanes      = 1;
+        driving    = 0;
+        buffer     = 0;
+        if (!csb) begin
+            cmd      = 0;
+            pp_count = 0;
+        end
+    end
+
+    // Device drives while the clock is low.
+    always @(csb, clk, HOLD_N) begin
+        if (!csb && !clk && dummycount == 0 && HOLD_N) begin
+            case (cmd)
+                CMD_RDSR, CMD_RDID: if (bytecount >= 1) begin
+                    driving = 1; dout[1] = buffer[7];
+                end
+                CMD_READ: if (bytecount >= 4) begin
+                    driving = 1; dout[1] = buffer[7];
+                end
+                CMD_DIOR: if (bytecount >= 5) begin
+                    driving = 1; dout[1:0] = buffer[7:6];
+                end
+                CMD_QIOR: if (bytecount >= 5) begin
+                    driving = 1; dout[3:0] = buffer[7:4];
+                end
+                CMD_OIOR: if (bytecount >= 5) begin
+                    driving = 1; dout = buffer;
+                end
+                default: driving = 0;
             endcase
+        end else if (csb || dummycount != 0 || !HOLD_N) begin
+            driving = 0;
+        end
+    end
+
+    // Sample the master while shifting out.
+    always @(posedge clk) begin
+        if (!csb && HOLD_N) begin
+            if (dummycount > 0) begin
+                dummycount = dummycount - 1;
+            end else begin
+                case (lanes)
+                    1: buffer = {buffer[6:0], io[0]};
+                    2: buffer = {buffer[5:0], io[1], io[0]};
+                    4: buffer = {buffer[3:0], io[3], io[2], io[1], io[0]};
+                    8: buffer = io;
+                    default: buffer = {buffer[6:0], io[0]};
+                endcase
+                bitcount = bitcount + lanes;
+                if (bitcount >= 8) begin
+                    bitcount  = 0;
+                    bytecount = bytecount + 1;
+                    handle_byte;
+                end
+            end
         end
     end
 

@@ -3,32 +3,35 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9', '3.11', '3.12']
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Install Icarus Verilog
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y iverilog
+      - name: Install Icarus Verilog
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
 
-    - name: Install Python dependencies
-      run: pip install cocotb pytest
+      # Our own JEDEC flash model.
+      - name: Device tests
+        run: make -C tests
 
-    - name: Add cocotbext to PYTHONPATH and run tests
-      env:
-        PYTHONPATH: ${{ github.workspace }}
-        COCOTB_LOG_LEVEL: DEBUG
-      run: make -C tests
-
-
-
+      # An independently written model (PicoSoC spiflash.v), which is what
+      # shows the driver speaks real QSPI rather than agreeing with itself.
+      - name: Interop tests
+        run: make -C tests -f Makefile.interop
