@@ -1,0 +1,29 @@
+# Controller as DUT: real RTL driving the MX25UM51345G model.
+#
+#   make -f Makefile.controller
+
+TOPLEVEL_LANG ?= verilog
+SIM ?= icarus
+
+COCOTB_HDL_TIMEUNIT = 1ns
+COCOTB_HDL_TIMEPRECISION = 1ps
+
+SIM_BUILD = sim_build_controller
+
+TOPLEVEL = xspi_controller_test
+MODULE   = test_controller
+
+VERILOG_SOURCES  = $(shell pwd)/../verilog/controller/xspi_controller.v
+VERILOG_SOURCES += $(shell pwd)/../verilog/controller/xspi_controller_test.v
+VERILOG_SOURCES += $(shell pwd)/../verilog/devices/mx25um51345g.v
+
+COMPILE_ARGS += -I$(shell pwd)/../verilog/devices
+
+export PYTHONPATH := $(shell pwd)/..:$(shell pwd):$(PYTHONPATH)
+export COCOTB_HDL_TIMEUNIT
+export COCOTB_HDL_TIMEPRECISION
+
+include $(shell cocotb-config --makefiles)/Makefile.sim
+
+clean::
+	@rm -rf $(SIM_BUILD) results.xml

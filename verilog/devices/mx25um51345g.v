@@ -37,7 +37,12 @@ module mx25um51345g #(
 )(
     input  wire       clk,
     input  wire       csb,          // active low chip select
-    inout  wire [7:0] io
+    inout  wire [7:0] io,
+    // Read data strobe. A separate pin, not part of SIO[7:0]: the device
+    // toggles it alongside read data so a controller can capture with the
+    // data rather than with its own clock, which is what makes high-speed
+    // DTR reads timing-closable. Enabled by CR2[0x200].
+    output wire       dqs
 );
 
     // ── SPI opcodes ──────────────────────────────────────────────────
@@ -179,6 +184,20 @@ module mx25um51345g #(
     end
 
     // The device answers on io1 in SPI and across all eight lanes in octal.
+    // DQS toggles only while the device is actually returning read data.
+    // It is free-running there and parked low otherwise, so a controller can
+    // gate on it. DOS (CR2[0x200] bit 1) enables it in STR; in DTR it is
+    // always on. DQSPRC adds a pre-cycle, modelled as an extra leading
+    // toggle so a controller can train on it before data arrives.
+    wire dqs_enabled = in_dopi || (in_opi && cr2_dqs[1]);
+    reg  dqs_r;
+    assign #1 dqs = dqs_r;
+
+    always @(*) begin
+        if (!csb && dqs_enabled && phase == P_READ) dqs_r = clk;
+        else                                       dqs_r = 1'b0;
+    end
+
     // Drive through a 1 ns delay. The master samples on clock edges and the
     // device updates on those same edges, so driving the live value races
     // it -- the master could see this edge's byte or the last one. Every

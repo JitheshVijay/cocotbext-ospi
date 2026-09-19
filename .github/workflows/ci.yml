@@ -43,3 +43,7 @@ jobs:
 
       - name: Micron MT35XU512ABA
         run: make -C tests -f Makefile.mt35
+
+      # RTL under test, rather than the driver under test.
+      - name: Controller DUT
+        run: make -C tests -f Makefile.controller

@@ -8,11 +8,12 @@ configurable array dummy cycles.
 
 import cocotb
 from cocotb.clock import Clock
+from cocotb.triggers import Edge, Timer
 
 from cocotbext.ospi.devices import (
     MX25UM51345G, CR2_MODE, CR2_DUMMY, CR2_MODE_SOPI, CR2_MODE_SPI,
     DUMMY_CYCLES, PROTO_1S_1S_1S, PROTO_8S_8S_8S, PROTO_8D_8D_8D,
-    CR2_MODE_DOPI,
+    CR2_MODE_DOPI, CR2_DQS, CR2_DQS_DOS,
     SCUR_WPSEL, SCUR_E_FAIL, SCUR_P_FAIL, SCUR_ESB, SCUR_PSB,
 )
 from cocotbext.ospi.sfdp import (
@@ -594,3 +595,84 @@ async def test_4bait_opcodes_are_the_ones_that_work(dut):
     assert await flash.read_byte(0x00008000) == 0x42
     await flash.erase_sector(0x00008000)
     assert await flash.read_byte(0x00008000) == 0xFF
+
+
+# ── DQS read data strobe ─────────────────────────────────────────────
+
+async def _dqs_toggles_during(flash, dut, read_coro):
+    """Run a read and report whether DQS toggled while it happened."""
+    seen = set()
+
+    async def watch():
+        while True:
+            await Edge(dut.clk)
+            seen.add(str(dut.dqs.value))
+
+    task = cocotb.start_soon(watch())
+    result = await read_coro
+    task.kill()
+    return result, seen
+
+
+@cocotb.test()
+async def test_dqs_is_parked_low_when_idle(dut):
+    """DQS sits low outside a read, so a controller can gate on it."""
+    flash = await setup(dut)
+    await Timer(100, unit="ns")
+    assert str(dut.dqs.value) == "0"
+
+
+@cocotb.test()
+async def test_dqs_toggles_during_a_dtr_read(dut):
+    """In DTR the device strobes DQS alongside the data it returns.
+
+    This is what lets a controller capture with the data rather than with
+    its own clock -- the whole reason the pin exists.
+    """
+    flash = await setup(dut)
+    await flash.enter_octal(PROTO_8D_8D_8D)
+    await flash.program(0x00009000, [0xA1, 0xB2])
+
+    data, seen = await _dqs_toggles_during(
+        flash, dut, flash.read(0x00009000, 2)
+    )
+    assert data == [0xA1, 0xB2]
+    assert seen >= {"0", "1"}, f"DQS never toggled during a DTR read: {seen}"
+
+
+@cocotb.test()
+async def test_dqs_is_quiet_in_plain_spi(dut):
+    """No strobe in single-lane SPI: DQS is an octal-mode feature."""
+    flash = await setup(dut)
+    await flash.program(0x0000A000, [0xC3])
+
+    data, seen = await _dqs_toggles_during(
+        flash, dut, flash.read(0x0000A000, 1)
+    )
+    assert data == [0xC3]
+    assert seen == {"0"}, f"DQS toggled outside octal mode: {seen}"
+
+
+@cocotb.test()
+async def test_dos_bit_gates_dqs_in_str_octal(dut):
+    """In STR octal the strobe is opt-in, via CR2[0x200] bit 1 (DOS).
+
+    DTR always strobes; STR does not unless asked. A controller that
+    enables DQS capture without setting DOS waits for edges that never come.
+    """
+    flash = await setup(dut)
+    await flash.enter_octal(PROTO_8S_8S_8S)
+    await flash.program(0x0000B000, [0xD4])
+
+    # Default: DOS clear, so no strobe.
+    _, quiet = await _dqs_toggles_during(flash, dut, flash.read(0x0000B000, 1))
+    assert quiet == {"0"}, f"DQS toggled in STR with DOS clear: {quiet}"
+
+    await flash.write_register(CR2_DQS, CR2_DQS_DOS)
+    assert await flash.read_register(CR2_DQS) == CR2_DQS_DOS
+
+    data, busy = await _dqs_toggles_during(flash, dut, flash.read(0x0000B000, 1))
+    assert data == [0xD4]
+    assert busy >= {"0", "1"}, f"DOS set but DQS stayed quiet: {busy}"
+
+    await flash.write_register(CR2_DQS, 0x00)

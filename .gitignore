@@ -3,6 +3,7 @@ sim_build/
 sim_build_interop/
 sim_build_mx25/
 sim_build_mt35/
+sim_build_controller/
 results.xml
 iverilog_dump.v
 *.vcd

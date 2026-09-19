@@ -22,6 +22,10 @@ from .profile import (
 # CR2 addresses.
 CR2_MODE = 0x00000000
 CR2_DQS = 0x00000200
+
+# CR2[0x00000200] bits.
+CR2_DQS_DOS = 0x02      # DQS on STR mode
+CR2_DQS_PRC = 0x01      # DTR DQS pre-cycle
 CR2_DUMMY = 0x00000300
 
 # CR2[0x00000000] values.

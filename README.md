@@ -48,10 +48,17 @@ async def test_flash(dut):
 SPI mode 0: the master launches data while the clock is low, the device
 samples it on the rising edge, and vice versa.
 
-**The opcode is always single-lane.** Only the address, mode byte and data
-widen. An octal read is *not* "everything on eight lanes" — it is one
-single-lane command byte, then eight-lane address and data. Getting this
-wrong is the most common reason a driver talks to nothing.
+**How wide the opcode is depends on the protocol, and this trips people up.**
+The names say it: in **1-4-4** — a quad read issued to a part still in
+ordinary SPI — the leading `1` means the opcode goes out on one lane and only
+the address and data widen. In **8-8-8** the part has been switched into
+octal wholesale, so the opcode is eight lanes too, and it comes as a pair
+with its extension byte.
+
+Mixing these up is the most common reason a controller talks to nothing, and
+it is why `xspi_controller` takes a separate lane count for the command
+phase rather than assuming either. (The sibling `cocotbext-qspi` is the
+1-4-4 case throughout, so there the opcode really is always single-lane.)
 
 **Programming only clears bits.** NOR flash needs an erase to set a bit back
 to 1. Programming `0x0F` over `0xF0` gives `0x00`, not `0x0F`.
@@ -235,6 +242,33 @@ is reported honestly in both the JEDEC ID and SFDP.
 make -C tests -f Makefile.mx25    # Macronix, 22 tests
 make -C tests -f Makefile.mt35    # Micron, 19 tests
 ```
+
+## A controller as DUT
+
+Everything above points a driver at a flash model. `verilog/controller/`
+inverts that: an `xspi_controller` is the RTL under test, driving the
+MX25UM51345G model, with cocotb poking only its command interface. It never
+touches the flash pins — if the controller gets a phase wrong, the bytes come
+back wrong and nothing in Python can paper over it.
+
+```
+make -C tests -f Makefile.controller    # 8 tests
+```
+
+One command per handshake: opcode, optional extension byte, address, address
+width, dummy cycles, lane counts, direction and length. Nothing in it is
+specific to a particular flash, so the same RTL drives the part in
+single-lane SPI and in octal.
+
+It is deliberately small — a sequencer, not a product. What it is for is
+being something real to point the models at, and it earned that immediately:
+writing it is what caught the opcode-width error described above, because
+the driver and the model both happened to be right while the prose was
+wrong. A closed loop of our own components could not have surfaced that.
+
+Single transfer rate only. DTR needs data on both edges and two sample
+points per period, and the counters step once per `sclk` period, so it is a
+real change rather than a parameter.
 
 ## Bus signals
 

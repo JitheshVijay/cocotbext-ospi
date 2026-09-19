@@ -14,6 +14,7 @@ module mx25um51345g_test;
     reg [7:0] io_oe;
 
     wire [7:0] io;
+    wire       dqs;
 
     genvar g;
     generate
@@ -25,7 +26,8 @@ module mx25um51345g_test;
     mx25um51345g dut (
         .clk (clk),
         .csb (csb),
-        .io  (io)
+        .io  (io),
+        .dqs (dqs)
     );
 
 endmodule
