@@ -67,7 +67,7 @@ async def _exit_octal(flash):
 
 MX25UM51345G = DeviceProfile(
     name="MX25UM51345G",
-    jedec_id=[0xC2, 0x80, 0x3A],
+    jedec_id=[0xC2, 0x81, 0x3A],
     cmd_ext=EXT_INVERT,
     supported=[PROTO_1S_1S_1S, PROTO_8S_8S_8S, PROTO_8D_8D_8D],
     octal_default=PROTO_8S_8S_8S,

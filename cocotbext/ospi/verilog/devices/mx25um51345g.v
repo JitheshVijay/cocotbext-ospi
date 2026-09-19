@@ -85,7 +85,7 @@ module mx25um51345g #(
                      MODE_DOPI = 8'h02;
 
     localparam [7:0] ID0 = 8'hC2,   // Macronix
-                     ID1 = 8'h80,   // MX25UM, 1.8 V octal
+                     ID1 = 8'h81,   // Rev 1.3 Table 6; 0x80 is the MX25UM51245G
                      ID2 = 8'h3A;   // 512 Mb
 
     // ── protocol phases ──────────────────────────────────────────────

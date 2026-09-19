@@ -90,17 +90,17 @@ only then does the bus widen to all eight for the address and data — a whole
 byte per clock. Note the dummy cycles, where neither side drives while the
 bus turns around:
 
-![Fast read octal I/O](docs/waveforms/octal-read.svg)
+![Fast read octal I/O](https://raw.githubusercontent.com/JitheshVijay/cocotbext-ospi/v0.2.0/docs/waveforms/octal-read.png)
 
 The same byte read at every width. This is what the wide modes buy you —
 40 clocks single-lane down to 21 octal, for one byte at the same address:
 
-![One byte at every width](docs/waveforms/width-comparison.svg)
+![One byte at every width](https://raw.githubusercontent.com/JitheshVijay/cocotbext-ospi/v0.2.0/docs/waveforms/width-comparison.png)
 
 A status read while a program is in flight. The device answers `0x01` — WIP
 set — which is what `wait_ready()` polls for:
 
-![Read status](docs/waveforms/read-status.svg)
+![Read status](https://raw.githubusercontent.com/JitheshVijay/cocotbext-ospi/v0.2.0/docs/waveforms/read-status.png)
 
 To regenerate them:
 
@@ -147,16 +147,16 @@ from cocotbext.ospi.xspi_flash import XspiFlash
 
 flash = XspiFlash(dut, MX25UM51345G)
 await flash.initialize()                       # the part boots single-lane
-assert await flash.read_id() == [0xC2, 0x80, 0x3A]
+assert await flash.read_id() == [0xC2, 0x81, 0x3A]
 
 await flash.enter_octal()                      # writes CR2, switches protocol
-assert await flash.read_id() == [0xC2, 0x80, 0x3A]   # now over eight lanes
+assert await flash.read_id() == [0xC2, 0x81, 0x3A]   # now over eight lanes
 ```
 
 ### Three things real parts do that a generic octal model does not
 
-**The opcode is single-lane even in octal, and it comes in pairs.** Octal
-commands are two bytes: the opcode and an extension. Macronix sends the
+**Octal commands come in pairs.** In 8-8-8 the opcode goes out eight lanes
+wide, immediately followed by an extension byte. Macronix sends the
 bitwise complement (`8READ` is `EC`/`13`), Micron repeats the opcode. Linux
 calls these `SPI_NOR_EXT_INVERT` and `SPI_NOR_EXT_REPEAT`. Send the wrong
 one and the model rejects the command — the two disagree about this
@@ -270,12 +270,12 @@ The tests also check the table is not lying: every advertised dummy count is
 programmed into CR2 and the read has to still work.
 
 The tables are built by `cocotbext/ospi/sfdp.py` and emitted into the models
-by `verilog/devices/generate_sfdp.py`. Defining them once and generating the
+by `cocotbext/ospi/verilog/devices/generate_sfdp.py`. Defining them once and generating the
 Verilog is what stops the model and the parser drifting apart — and the
 tests read back through the parser exactly what the generator put in.
 
 ```
-python3 verilog/devices/generate_sfdp.py   # regenerate the ROMs
+python3 cocotbext/ospi/verilog/devices/generate_sfdp.py   # regenerate the ROMs
 ```
 
 ### Reset
@@ -306,7 +306,7 @@ make -C tests -f Makefile.controller    # controller DUT, 8 tests
 
 ## A controller as DUT
 
-Everything above points a driver at a flash model. `verilog/controller/`
+Everything above points a driver at a flash model. `cocotbext/ospi/verilog/controller/`
 inverts that: an `xspi_controller` is the RTL under test, driving the
 MX25UM51345G model, with cocotb poking only its command interface. It never
 touches the flash pins — if the controller gets a phase wrong, the bytes come
@@ -323,9 +323,9 @@ single-lane SPI and in octal.
 
 It is deliberately small — a sequencer, not a product. What it is for is
 being something real to point the models at, and it earned that immediately:
-writing it is what caught the opcode-width error described above, because
-the driver and the model both happened to be right while the prose was
-wrong. A closed loop of our own components could not have surfaced that.
+writing it exposed an opcode-width error in this README, because the driver
+and the model both happened to be right while the prose was wrong. A closed
+loop of our own components could not have surfaced that.
 
 Single transfer rate only. DTR needs data on both edges and two sample
 points per period, and the counters step once per `sclk` period, so it is a
@@ -389,8 +389,8 @@ octal as less hardened than the rest.
 | `cocotbext/ospi/ospi_master.py` | `OspiMaster` — byte transfers at 1/2/4/8 lanes |
 | `cocotbext/ospi/ospi_bus.py` | `OspiBus` — signal bundle |
 | `cocotbext/ospi/ospi_config.py` | `OspiConfig`, `lanes_for_mode` |
-| `verilog/ospi_flash.v` | NOR flash model: WEL, WIP, page program, sector erase, hold |
-| `verilog/ospi_flash_test.v` | cocotb top level |
+| `cocotbext/ospi/verilog/ospi_flash.v` | NOR flash model: WEL, WIP, page program, sector erase, hold |
+| `cocotbext/ospi/verilog/ospi_flash_test.v` | cocotb top level |
 | `tests/reference/` | third-party model for interop (ISC, see its README) |
 
 ## Licence

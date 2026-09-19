@@ -385,3 +385,16 @@ async def test_flag_status_readable_in_octal_dtr(dut):
     await flash.program(0x00000060, [0xBB, 0xCC])
     assert await flash.read_flag_status() & FSR_READY
     assert await flash.read(0x00000060, 2) == [0xBB, 0xCC]
+
+
+@cocotb.test()
+async def test_jedec_id_matches_the_profile(dut):
+    """The model and the profile must agree on the part's identity.
+
+    Separate constants in Verilog and Python; nothing but this stops them
+    drifting. 2C/5B/1A is Micron, MT35XU family, 512 Mb -- the same triple
+    Linux carries in micron-st.c.
+    """
+    flash = await setup(dut)
+    assert await flash.read_id() == MT35XU512ABA.jedec_id
+    assert MT35XU512ABA.jedec_id == [0x2C, 0x5B, 0x1A]

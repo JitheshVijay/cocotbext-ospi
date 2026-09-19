@@ -34,7 +34,7 @@ async def test_boots_in_spi(dut):
     """The part comes up single-lane, and identifies itself there."""
     flash = await setup(dut)
     assert flash.protocol == PROTO_1S_1S_1S
-    assert await flash.read_id() == [0xC2, 0x80, 0x3A]
+    assert await flash.read_id() == [0xC2, 0x81, 0x3A]
 
 
 @cocotb.test()
@@ -55,7 +55,7 @@ async def test_enter_octal_and_identify(dut):
     flash = await setup(dut)
     await flash.enter_octal(PROTO_8S_8S_8S)
     assert flash.protocol == PROTO_8S_8S_8S
-    assert await flash.read_id() == [0xC2, 0x80, 0x3A]
+    assert await flash.read_id() == [0xC2, 0x81, 0x3A]
 
 
 @cocotb.test()
@@ -71,11 +71,11 @@ async def test_returns_to_spi(dut):
     """Clearing CR2 puts the part back on one lane."""
     flash = await setup(dut)
     await flash.enter_octal()
-    assert await flash.read_id() == [0xC2, 0x80, 0x3A]
+    assert await flash.read_id() == [0xC2, 0x81, 0x3A]
 
     await flash.exit_octal()
     assert flash.protocol == PROTO_1S_1S_1S
-    assert await flash.read_id() == [0xC2, 0x80, 0x3A]
+    assert await flash.read_id() == [0xC2, 0x81, 0x3A]
 
 
 @cocotb.test()
@@ -219,7 +219,7 @@ async def test_enter_dopi_and_identify(dut):
     await flash.enter_octal(PROTO_8D_8D_8D)
     assert flash.protocol == PROTO_8D_8D_8D
     assert flash.dtr
-    assert await flash.read_id() == [0xC2, 0x80, 0x3A]
+    assert await flash.read_id() == [0xC2, 0x81, 0x3A]
     assert await flash.read_register(CR2_MODE) == CR2_MODE_DOPI
 
 
@@ -541,7 +541,7 @@ async def test_reads_are_allowed_during_suspend(dut):
     await flash.suspend()
 
     assert await flash.read(0x00007000, 2) == [0xBE, 0xEF]
-    assert await flash.read_id() == [0xC2, 0x80, 0x3A]
+    assert await flash.read_id() == [0xC2, 0x81, 0x3A]
 
     await flash.resume()
     await flash.wait_ready()
@@ -724,7 +724,7 @@ async def test_dqs_in_str_octal_is_an_assumption_for_register_reads(dut):
     ident = await flash.read_id()
     task.kill()
 
-    assert ident == [0xC2, 0x80, 0x3A]
+    assert ident == [0xC2, 0x81, 0x3A]
     assert seen >= {"0", "1"}, "model chose to strobe register reads; it did not"
 
     await flash.write_register(CR2_DQS, 0x00)
@@ -753,3 +753,19 @@ async def test_dos_bit_gates_dqs_in_str_octal(dut):
     assert busy >= {"0", "1"}, f"DOS set but DQS stayed quiet: {busy}"
 
     await flash.write_register(CR2_DQS, 0x00)
+
+
+@cocotb.test()
+async def test_jedec_id_matches_the_profile(dut):
+    """The model and the profile must agree on the part's identity.
+
+    They are separate constants -- one in Verilog, one in Python -- and
+    nothing but this test stops them drifting. The ID itself is
+    C2/81/3A, from Rev 1.3 Table 6; 0x80 in the middle byte is the
+    MX25UM51245G, a different part, and an earlier version of this model
+    carried it. Forty passing tests did not notice, because every one of
+    them asserted the model's own value.
+    """
+    flash = await setup(dut)
+    assert await flash.read_id() == MX25UM51345G.jedec_id
+    assert MX25UM51345G.jedec_id == [0xC2, 0x81, 0x3A]

@@ -101,7 +101,7 @@ async def test_controller_reads_the_jedec_id(dut):
     """The simplest possible round trip: RDID over one lane."""
     await reset(dut)
     ident = await command(dut, 0x9F, read=3)
-    assert ident == [0xC2, 0x80, 0x3A], f"got {[hex(b) for b in ident]}"
+    assert ident == [0xC2, 0x81, 0x3A], f"got {[hex(b) for b in ident]}"
 
 
 @cocotb.test()
@@ -213,7 +213,7 @@ async def test_controller_switches_the_part_to_octal_and_reads(dut):
     # Now octal: every command carries its complement as an extension.
     ident = await command(dut, 0x9F, ext=0x60, address=0, addr_bytes=4,
                           dummy=4, lanes=OCTAL, read=3)
-    assert ident == [0xC2, 0x80, 0x3A], f"octal RDID gave {[hex(b) for b in ident]}"
+    assert ident == [0xC2, 0x81, 0x3A], f"octal RDID gave {[hex(b) for b in ident]}"
 
     got = await command(dut, 0xEC, ext=0x13, address=0x00000300,
                         addr_bytes=4, dummy=20, lanes=OCTAL, read=2)
@@ -229,7 +229,7 @@ async def test_controller_rejects_nothing_it_should_accept(dut):
     """
     await reset(dut)
     for _ in range(3):
-        assert (await command(dut, 0x9F, read=3)) == [0xC2, 0x80, 0x3A]
+        assert (await command(dut, 0x9F, read=3)) == [0xC2, 0x81, 0x3A]
         await command(dut, 0x06)
         await command(dut, 0x04)
         assert len(await command(dut, 0x05, read=1)) == 1
