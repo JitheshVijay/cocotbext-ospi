@@ -619,11 +619,54 @@ async def _dqs_toggles_during(flash, dut, read_coro):
 
 
 @cocotb.test()
-async def test_dqs_is_parked_low_when_idle(dut):
-    """DQS sits low outside a read, so a controller can gate on it."""
+async def test_dqs_is_low_between_transactions(dut):
+    """DQS sits low with chip select high.
+
+    The datasheet figures do not actually show DQS after a burst ends, so
+    this pins an assumption rather than a documented level -- see the note
+    in the model.
+    """
     flash = await setup(dut)
     await Timer(100, unit="ns")
     assert str(dut.dqs.value) == "0"
+
+
+@cocotb.test()
+async def test_dqs_is_held_high_through_command_and_address(dut):
+    """DQS is high across the command and address phases, then low for dummy.
+
+    Taken from the Rev 1.3 timing figures. It is not parked low while idle,
+    which matters: a controller gating on "DQS low" is seeing dummy-or-idle,
+    not idle alone. Getting this backwards is the sort of thing a model
+    tested only against its own driver never notices.
+    """
+    flash = await setup(dut)
+    await flash.enter_octal(PROTO_8D_8D_8D)
+    await flash.program(0x0000C000, [0x9A, 0xBC])
+
+    levels = []
+
+    async def watch():
+        while True:
+            await Edge(dut.clk)
+            # The model drives dqs through a 1 ns delay, so sample after it
+            # settles -- and only while chip select is asserted, since the
+            # level between transactions is a separate question.
+            await Timer(2, unit="ns")
+            if str(dut.csb.value) == "0":
+                levels.append((str(dut.dut.phase.value), str(dut.dqs.value)))
+
+    task = cocotb.start_soon(watch())
+    got = await flash.read(0x0000C000, 2)
+    task.kill()
+    assert got == [0x9A, 0xBC]
+
+    # phase encodings: P_CMD=0, P_EXT=1, P_ADDR=2, P_DUMMY=3
+    during_cmd = {d for p, d in levels if p in ("000", "001", "010")}
+    during_dummy = {d for p, d in levels if p == "011"}
+
+    assert during_cmd == {"1"}, f"DQS not held high over cmd/addr: {during_cmd}"
+    assert during_dummy == {"0"}, f"DQS not low through dummy: {during_dummy}"
 
 
 @cocotb.test()
@@ -655,6 +698,36 @@ async def test_dqs_is_quiet_in_plain_spi(dut):
     )
     assert data == [0xC3]
     assert seen == {"0"}, f"DQS toggled outside octal mode: {seen}"
+
+
+@cocotb.test()
+async def test_dqs_in_str_octal_is_an_assumption_for_register_reads(dut):
+    """STR register reads strobe here, but the datasheet does not say they do.
+
+    Only one STR-OPI figure carries a DQS row at all -- the array read.
+    Every STR-OPI register read is drawn without one, so whether DOS makes
+    RDSR or RDID strobe is undocumented. This pins what the model chose, so
+    the choice is visible rather than implied.
+    """
+    flash = await setup(dut)
+    await flash.enter_octal(PROTO_8S_8S_8S)
+    await flash.write_register(CR2_DQS, CR2_DQS_DOS)
+
+    seen = set()
+
+    async def watch():
+        while True:
+            await Edge(dut.clk)
+            seen.add(str(dut.dqs.value))
+
+    task = cocotb.start_soon(watch())
+    ident = await flash.read_id()
+    task.kill()
+
+    assert ident == [0xC2, 0x80, 0x3A]
+    assert seen >= {"0", "1"}, "model chose to strobe register reads; it did not"
+
+    await flash.write_register(CR2_DQS, 0x00)
 
 
 @cocotb.test()

@@ -189,19 +189,35 @@ module mx25um51345g #(
         dtr       = 1'b0;
     end
 
-    // The device answers on io1 in SPI and across all eight lanes in octal.
-    // DQS toggles only while the device is actually returning read data.
-    // It is free-running there and parked low otherwise, so a controller can
-    // gate on it. DOS (CR2[0x200] bit 1) enables it in STR; in DTR it is
-    // always on. DQSPRC adds a pre-cycle, modelled as an extra leading
-    // toggle so a controller can train on it before data arrives.
+    // DQS, the read data strobe.
+    //
+    // Shape taken from the Rev 1.3 timing figures (p.44-46, read from the
+    // artwork -- the text extract carries only bare "DQS" row labels):
+    // DQS sits HIGH across the command and address phases, drops LOW for
+    // the dummy span, then toggles with the returning data. It is *not*
+    // parked low while idle, which matters to a controller that gates on
+    // it: "DQS low" means dummy-or-idle, not simply idle.
+    //
+    // DOS (CR2[0x200] bit 1) enables it in STR; in DTR it is always on.
+    //
+    // Two honest gaps. Only one STR-OPI figure (Fig 42, the array read)
+    // carries a DQS row at all -- every STR-OPI register read is drawn
+    // without one -- so whether DOS makes RDSR or RDID strobe is
+    // undocumented, and this model says yes for lack of anything better.
+    // And no figure shows DQS after the final data byte, so returning low
+    // at the end of a burst is an assumption, not a documented behaviour.
     wire dqs_enabled = in_dopi || (in_opi && cr2_dqs[1]);
+    wire dqs_preamble = (phase == P_CMD) || (phase == P_EXT) ||
+                        (phase == P_ADDR);
     reg  dqs_r;
     assign #1 dqs = dqs_r;
 
     always @(*) begin
-        if (!csb && dqs_enabled && phase == P_READ) dqs_r = clk;
-        else                                       dqs_r = 1'b0;
+        if (csb || !dqs_enabled)     dqs_r = 1'b0;   // assumed idle level
+        else if (dqs_preamble)       dqs_r = 1'b1;   // held high, Fig 42-46
+        else if (phase == P_DUMMY)   dqs_r = 1'b0;   // low through dummy
+        else if (phase == P_READ)    dqs_r = clk;    // strobes the data
+        else                         dqs_r = 1'b0;
     end
 
     // Drive through a 1 ns delay. The master samples on clock edges and the

@@ -181,6 +181,39 @@ The DTR edge handling is validated against PicoSoC's `spiflash.v` quad-DTR
 read (`0xED`), an independently written model, for the same reason the rest
 of the interop suite exists.
 
+### DQS
+
+A separate pin, not part of `SIO[7:0]`. The device strobes it alongside read
+data so a controller can capture with the data rather than with its own
+clock, which is what makes high-speed DTR reads timing-closable.
+
+The shape is taken from the Rev 1.3 timing figures, read from the artwork —
+the text extraction carries only bare `DQS` row labels:
+
+| Phase | DQS |
+|---|---|
+| Command, extension, address | **held high** |
+| Dummy | low |
+| Data | toggles with the clock |
+
+It is **not** parked low while busy, which matters to a controller that
+gates on it: *DQS low* means dummy-or-idle, not idle alone. Getting this
+backwards is exactly the sort of thing a model tested only against its own
+driver never notices — the tests would assert whatever the model did.
+
+DTR always strobes. STR only does so if `DOS` (CR2 `0x200` bit 1) asks, and
+a controller that enables DQS capture without setting it waits for edges
+that never come.
+
+Two things the datasheet does not settle, flagged in the model and pinned by
+tests so the choices are visible:
+
+- Only **one** STR-OPI figure carries a DQS row at all — the array read.
+  Every STR-OPI register read is drawn without one, so whether `DOS` makes
+  `RDSR` or `RDID` strobe is undocumented. The model says yes.
+- No figure shows DQS after the final data byte, so returning low at the end
+  of a burst is an assumption.
+
 ### SFDP
 
 Both models carry a real SFDP image, so a driver can discover a part instead
